@@ -1,0 +1,132 @@
+{
+  "annotations": { "list": [] },
+  "editable": true,
+  "graphTooltip": 1,
+  "title": "PulseSearch Pipeline",
+  "uid": "pulsesearch",
+  "version": 1,
+  "time": { "from": "now-15m", "to": "now" },
+  "refresh": "5s",
+  "schemaVersion": 39,
+  "templating": { "list": [] },
+  "panels": [
+    {
+      "type": "stat",
+      "title": "End-to-end sync latency (p95)",
+      "gridPos": { "h": 6, "w": 8, "x": 0, "y": 0 },
+      "fieldConfig": { "defaults": { "unit": "s", "decimals": 3 } },
+      "targets": [
+        {
+          "expr": "histogram_quantile(0.95, sum(rate(pulse_sync_latency_seconds_bucket[5m])) by (le))",
+          "legendFormat": "p95"
+        }
+      ]
+    },
+    {
+      "type": "stat",
+      "title": "Docs indexed / sec",
+      "gridPos": { "h": 6, "w": 8, "x": 8, "y": 0 },
+      "fieldConfig": { "defaults": { "unit": "ops" } },
+      "targets": [
+        { "expr": "sum(rate(pulse_docs_indexed_total[1m]))", "legendFormat": "indexed/s" }
+      ]
+    },
+    {
+      "type": "stat",
+      "title": "Active WebSocket clients",
+      "gridPos": { "h": 6, "w": 8, "x": 16, "y": 0 },
+      "fieldConfig": { "defaults": { "unit": "short" } },
+      "targets": [
+        { "expr": "sum(pulse_ws_connections)", "legendFormat": "clients" }
+      ]
+    },
+    {
+      "type": "timeseries",
+      "title": "Sync latency (source commit -> searchable)",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 6 },
+      "fieldConfig": { "defaults": { "unit": "s" } },
+      "targets": [
+        {
+          "expr": "histogram_quantile(0.50, sum(rate(pulse_sync_latency_seconds_bucket[5m])) by (le))",
+          "legendFormat": "p50"
+        },
+        {
+          "expr": "histogram_quantile(0.95, sum(rate(pulse_sync_latency_seconds_bucket[5m])) by (le))",
+          "legendFormat": "p95"
+        },
+        {
+          "expr": "histogram_quantile(0.99, sum(rate(pulse_sync_latency_seconds_bucket[5m])) by (le))",
+          "legendFormat": "p99"
+        }
+      ]
+    },
+    {
+      "type": "timeseries",
+      "title": "Throughput: ingest vs index",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 6 },
+      "fieldConfig": { "defaults": { "unit": "ops" } },
+      "targets": [
+        {
+          "expr": "sum(rate(pulse_events_ingested_total[1m]))",
+          "legendFormat": "ingested/s"
+        },
+        {
+          "expr": "sum(rate(pulse_docs_indexed_total[1m]))",
+          "legendFormat": "indexed/s"
+        }
+      ]
+    },
+    {
+      "type": "timeseries",
+      "title": "CDC events consumed by op",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 14 },
+      "fieldConfig": { "defaults": { "unit": "ops" } },
+      "targets": [
+        {
+          "expr": "sum(rate(pulse_cdc_events_consumed_total[1m])) by (op)",
+          "legendFormat": "{{op}}"
+        }
+      ]
+    },
+    {
+      "type": "timeseries",
+      "title": "Search latency p95 by mode",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 14 },
+      "fieldConfig": { "defaults": { "unit": "s" } },
+      "targets": [
+        {
+          "expr": "histogram_quantile(0.95, sum(rate(pulse_search_latency_seconds_bucket[5m])) by (le, mode))",
+          "legendFormat": "{{mode}}"
+        }
+      ]
+    },
+    {
+      "type": "timeseries",
+      "title": "Failures & DLQ",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 22 },
+      "fieldConfig": { "defaults": { "unit": "ops" } },
+      "targets": [
+        {
+          "expr": "sum(rate(pulse_sync_failures_total[5m])) by (stage)",
+          "legendFormat": "fail {{stage}}"
+        },
+        {
+          "expr": "sum(rate(pulse_dlq_messages_total[5m]))",
+          "legendFormat": "dlq/s"
+        }
+      ]
+    },
+    {
+      "type": "timeseries",
+      "title": "Embedding latency p95",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 22 },
+      "fieldConfig": { "defaults": { "unit": "s" } },
+      "targets": [
+        {
+          "expr": "histogram_quantile(0.95, sum(rate(pulse_embedding_latency_seconds_bucket[5m])) by (le))",
+          "legendFormat": "p95"
+        }
+      ]
+    }
+  ]
+}

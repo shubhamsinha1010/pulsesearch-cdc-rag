@@ -1,0 +1,21 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "pulsesearch-common"
+version = "0.1.0"
+description = "Shared kernel (config, models, embeddings, ES repository, metrics) for PulseSearch"
+requires-python = ">=3.11"
+dependencies = [
+    "pydantic>=2.6",
+    "pydantic-settings>=2.2",
+    "elasticsearch>=8.13,<9",
+    "prometheus-client>=0.20",
+]
+
+[project.optional-dependencies]
+embeddings = ["sentence-transformers>=2.7"]
+
+[tool.setuptools.packages.find]
+include = ["pulsesearch_common*"]

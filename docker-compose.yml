@@ -1,0 +1,269 @@
+name: pulsesearch
+
+# ---------------------------------------------------------------------------
+# PulseSearch: real-time CDC + hybrid search + RAG, fully local and free.
+# One command:  docker compose up -d --build
+# ---------------------------------------------------------------------------
+
+x-restart: &restart
+  restart: unless-stopped
+
+services:
+  # --- System of record --------------------------------------------------
+  mysql:
+    image: mysql:8.0
+    <<: *restart
+    command:
+      - --server-id=223344
+      - --log-bin=mysql-bin
+      - --binlog-format=ROW
+      - --binlog-row-image=FULL
+      - --gtid-mode=ON
+      - --enforce-gtid-consistency=ON
+      - --binlog-expire-logs-seconds=86400
+    environment:
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:-rootpass}
+      MYSQL_DATABASE: ${MYSQL_DATABASE:-pulsesearch}
+      MYSQL_USER: ${MYSQL_USER:-pulse}
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD:-pulse}
+    ports:
+      - "3306:3306"
+    volumes:
+      - mysql-data:/var/lib/mysql
+      - ./infra/mysql/init.sql:/docker-entrypoint-initdb.d/init.sql:ro
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-p${MYSQL_ROOT_PASSWORD:-rootpass}"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  # --- Kafka-compatible log (Redpanda) -----------------------------------
+  redpanda:
+    image: redpandadata/redpanda:v24.1.7
+    <<: *restart
+    command:
+      - redpanda
+      - start
+      - --overprovisioned
+      - --smp=1
+      - --memory=1G
+      - --reserve-memory=0M
+      - --node-id=0
+      - --check=false
+      - --kafka-addr=PLAINTEXT://0.0.0.0:9092,OUTSIDE://0.0.0.0:19092
+      - --advertise-kafka-addr=PLAINTEXT://redpanda:9092,OUTSIDE://localhost:19092
+    ports:
+      - "19092:19092"
+      - "9644:9644"
+    volumes:
+      - redpanda-data:/var/lib/redpanda/data
+    healthcheck:
+      test: ["CMD-SHELL", "rpk cluster health | grep -q 'Healthy:.*true'"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+
+  # --- Kafka Connect + Debezium -----------------------------------------
+  connect:
+    image: debezium/connect:2.6
+    <<: *restart
+    depends_on:
+      redpanda:
+        condition: service_healthy
+      mysql:
+        condition: service_healthy
+    ports:
+      - "8083:8083"
+    environment:
+      BOOTSTRAP_SERVERS: redpanda:9092
+      GROUP_ID: pulsesearch-connect
+      CONFIG_STORAGE_TOPIC: pulse.connect-configs
+      OFFSET_STORAGE_TOPIC: pulse.connect-offsets
+      STATUS_STORAGE_TOPIC: pulse.connect-status
+      CONFIG_STORAGE_REPLICATION_FACTOR: 1
+      OFFSET_STORAGE_REPLICATION_FACTOR: 1
+      STATUS_STORAGE_REPLICATION_FACTOR: 1
+      KEY_CONVERTER: org.apache.kafka.connect.json.JsonConverter
+      VALUE_CONVERTER: org.apache.kafka.connect.json.JsonConverter
+      CONNECT_KEY_CONVERTER_SCHEMAS_ENABLE: "false"
+      CONNECT_VALUE_CONVERTER_SCHEMAS_ENABLE: "false"
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:8083/connectors || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+
+  # Registers the Debezium connector once Connect is up, then exits.
+  connect-init:
+    image: curlimages/curl:8.8.0
+    depends_on:
+      connect:
+        condition: service_healthy
+    volumes:
+      - ./connectors:/connectors:ro
+    entrypoint: ["sh", "-c"]
+    command:
+      - >
+        echo 'Registering Debezium connector...';
+        code=$$(curl -s -o /tmp/out -w '%{http_code}'
+        -X POST -H 'Content-Type: application/json'
+        --data @/connectors/debezium-mysql.json
+        http://connect:8083/connectors);
+        echo "HTTP $$code"; cat /tmp/out;
+        if [ "$$code" = "201" ] || [ "$$code" = "409" ]; then
+          echo 'Connector present.'; exit 0;
+        else
+          echo 'Registration failed.'; exit 1;
+        fi
+    restart: "no"
+
+  # --- Search engine -----------------------------------------------------
+  elasticsearch:
+    image: docker.elastic.co/elasticsearch/elasticsearch:8.13.4
+    <<: *restart
+    environment:
+      discovery.type: single-node
+      xpack.security.enabled: "false"
+      ES_JAVA_OPTS: "-Xms512m -Xmx512m"
+      bootstrap.memory_lock: "true"
+    ulimits:
+      memlock:
+        soft: -1
+        hard: -1
+    ports:
+      - "9200:9200"
+    volumes:
+      - es-data:/usr/share/elasticsearch/data
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:9200/_cluster/health || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+
+  # --- Local LLM ---------------------------------------------------------
+  ollama:
+    image: ollama/ollama:latest
+    <<: *restart
+    ports:
+      - "11434:11434"
+    volumes:
+      - ollama-data:/root/.ollama
+    healthcheck:
+      test: ["CMD-SHELL", "ollama list >/dev/null 2>&1 || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 10
+
+  # Pulls the model once, then exits (RAG degrades gracefully until ready).
+  ollama-init:
+    image: ollama/ollama:latest
+    depends_on:
+      ollama:
+        condition: service_started
+    environment:
+      OLLAMA_HOST: http://ollama:11434
+    entrypoint: ["sh", "-c"]
+    command:
+      - "sleep 5 && ollama pull ${OLLAMA_MODEL:-llama3.2:3b}"
+    restart: "no"
+
+  # --- Application services ----------------------------------------------
+  ingest:
+    build:
+      context: .
+      dockerfile: services/ingest/Dockerfile
+    <<: *restart
+    depends_on:
+      mysql:
+        condition: service_healthy
+    environment:
+      MYSQL_HOST: mysql
+      MYSQL_USER: ${MYSQL_USER:-pulse}
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD:-pulse}
+      MYSQL_DATABASE: ${MYSQL_DATABASE:-pulsesearch}
+      INGEST_SOURCE: ${INGEST_SOURCE:-wikimedia}
+      INGEST_WIKIS: ${INGEST_WIKIS:-enwiki}
+      METRICS_PORT: 9100
+
+  worker:
+    build:
+      context: .
+      dockerfile: services/worker/Dockerfile
+    <<: *restart
+    depends_on:
+      redpanda:
+        condition: service_healthy
+      elasticsearch:
+        condition: service_healthy
+      connect:
+        condition: service_healthy
+    environment:
+      KAFKA_BOOTSTRAP_SERVERS: redpanda:9092
+      KAFKA_SOURCE_TOPIC: pulse.pulsesearch.pages
+      ES_URL: http://elasticsearch:9200
+      METRICS_PORT: 9100
+
+  api:
+    build:
+      context: .
+      dockerfile: services/api/Dockerfile
+    <<: *restart
+    depends_on:
+      elasticsearch:
+        condition: service_healthy
+      redpanda:
+        condition: service_healthy
+    environment:
+      ES_URL: http://elasticsearch:9200
+      KAFKA_BOOTSTRAP_SERVERS: redpanda:9092
+      KAFKA_SOURCE_TOPIC: pulse.pulsesearch.pages
+      OLLAMA_BASE_URL: http://ollama:11434
+      OLLAMA_MODEL: ${OLLAMA_MODEL:-llama3.2:3b}
+    ports:
+      - "8000:8000"
+
+  web:
+    build:
+      context: ./web
+      dockerfile: Dockerfile
+    <<: *restart
+    depends_on:
+      - api
+    environment:
+      # Browser talks to the API/WS directly on the host-exposed ports.
+      NEXT_PUBLIC_API_URL: http://localhost:8000
+      NEXT_PUBLIC_WS_URL: ws://localhost:8000
+    ports:
+      - "3000:3000"
+
+  # --- Observability -----------------------------------------------------
+  prometheus:
+    image: prom/prometheus:v2.53.0
+    <<: *restart
+    volumes:
+      - ./infra/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+    ports:
+      - "9090:9090"
+
+  grafana:
+    image: grafana/grafana:11.1.0
+    <<: *restart
+    depends_on:
+      - prometheus
+    environment:
+      GF_SECURITY_ADMIN_USER: admin
+      GF_SECURITY_ADMIN_PASSWORD: admin
+      GF_USERS_ALLOW_SIGN_UP: "false"
+    volumes:
+      - ./infra/grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./infra/grafana/dashboards:/var/lib/grafana/dashboards:ro
+      - grafana-data:/var/lib/grafana
+    ports:
+      - "3001:3000"
+
+volumes:
+  mysql-data:
+  redpanda-data:
+  es-data:
+  ollama-data:
+  grafana-data:

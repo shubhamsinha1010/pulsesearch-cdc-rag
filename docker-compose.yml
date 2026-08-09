@@ -93,28 +93,22 @@ services:
       timeout: 5s
       retries: 12
 
-  # Registers the Debezium connector once Connect is up, then exits.
+  # Registers/updates the Debezium connector once Connect is up, then exits.
   connect-init:
-    image: curlimages/curl:8.8.0
+    image: python:3.11-slim
     depends_on:
       connect:
         condition: service_healthy
     volumes:
       - ./connectors:/connectors:ro
-    entrypoint: ["sh", "-c"]
+    environment:
+      CONNECT_URL: http://connect:8083
+    entrypoint: ["bash", "-c"]
     command:
       - >
-        echo 'Registering Debezium connector...';
-        code=$$(curl -s -o /tmp/out -w '%{http_code}'
-        -X POST -H 'Content-Type: application/json'
-        --data @/connectors/debezium-mysql.json
-        http://connect:8083/connectors);
-        echo "HTTP $$code"; cat /tmp/out;
-        if [ "$$code" = "201" ] || [ "$$code" = "409" ]; then
-          echo 'Connector present.'; exit 0;
-        else
-          echo 'Registration failed.'; exit 1;
-        fi
+        apt-get update -qq
+        && apt-get install -y -qq --no-install-recommends curl
+        && bash /connectors/register.sh
     restart: "no"
 
   # --- Search engine -----------------------------------------------------
@@ -200,13 +194,12 @@ services:
     build:
       context: ./web
       dockerfile: Dockerfile
+      args:
+        NEXT_PUBLIC_API_URL: http://localhost:8000
+        NEXT_PUBLIC_WS_URL: ws://localhost:8000
     <<: *restart
     depends_on:
       - api
-    environment:
-      # Browser talks to the API/WS directly on the host-exposed ports.
-      NEXT_PUBLIC_API_URL: http://localhost:8000
-      NEXT_PUBLIC_WS_URL: ws://localhost:8000
     ports:
       - "3000:3000"
 

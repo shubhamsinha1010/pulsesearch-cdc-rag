@@ -20,7 +20,6 @@ from .handlers import ChangeEvent
 @dataclass
 class PipelineResult:
     upserts: list[PageDocument] = field(default_factory=list)
-    delete_ids: list[str] = field(default_factory=list)
     # Kept to compute end-to-end sync latency after the ES write succeeds.
     source_ts_ms_by_id: dict[str, int] = field(default_factory=dict)
 
@@ -32,25 +31,23 @@ class EnrichmentPipeline:
     def process(self, events: list[ChangeEvent]) -> PipelineResult:
         result = PipelineResult()
 
-        upsert_events = [e for e in events if e.op.is_upsert and e.document]
-        # Collapse duplicate ids within the batch, keeping the newest version so
-        # we embed and write each document at most once per batch.
+        # Collapse to the newest op per id (create/update/delete) so a
+        # delete-then-recreate in the same batch cannot leave a stale tombstone,
+        # and a recreate-then-delete cannot resurrect an older upsert.
         latest: dict[str, ChangeEvent] = {}
-        for event in upsert_events:
+        for event in events:
+            if event.document is None:
+                continue
             existing = latest.get(event.doc_id)
             if existing is None or event.source_ts_ms >= existing.source_ts_ms:
                 latest[event.doc_id] = event
 
-        documents = [e.document for e in latest.values()]
-        self._attach_embeddings(documents)
+        live_docs = [e.document for e in latest.values() if not e.document.deleted]
+        self._attach_embeddings(live_docs)
 
         for event in latest.values():
             result.upserts.append(event.document)  # type: ignore[arg-type]
             result.source_ts_ms_by_id[event.doc_id] = event.source_ts_ms
-
-        for event in events:
-            if event.op.is_delete:
-                result.delete_ids.append(event.doc_id)
 
         return result
 

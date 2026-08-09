@@ -16,7 +16,6 @@ from pulsesearch_common.config import (
 )
 from pulsesearch_common.embeddings import (
     EmbeddingProvider,
-    HashingEmbeddings,
     SentenceTransformerEmbeddings,
 )
 from pulsesearch_common.es_client import PageRepository
@@ -34,15 +33,11 @@ def get_repository() -> PageRepository:
 
 @lru_cache
 def get_embeddings() -> EmbeddingProvider:
-    # The API must embed queries with the *same* model the worker used to embed
-    # documents, otherwise kNN is meaningless. Fall back to a deterministic
-    # provider only if the model cannot be loaded.
-    try:
-        provider: EmbeddingProvider = SentenceTransformerEmbeddings()
-        provider.embed("warmup")  # force lazy load; surfaces errors early
-        return provider
-    except Exception:  # noqa: BLE001
-        return HashingEmbeddings()
+    # Queries must use the *same* model the worker used to embed documents.
+    # Never fall back to a different embedding space — that silently breaks kNN.
+    provider: EmbeddingProvider = SentenceTransformerEmbeddings()
+    provider.embed("warmup")  # force lazy load; surfaces errors early
+    return provider
 
 
 @lru_cache

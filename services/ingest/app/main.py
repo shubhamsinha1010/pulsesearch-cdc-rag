@@ -19,7 +19,7 @@ from pulsesearch_common.config import (
     observability_settings,
 )
 from pulsesearch_common.logging import configure_logging
-from pulsesearch_common.metrics import EVENTS_DROPPED, EVENTS_INGESTED, serve_metrics
+from pulsesearch_common.metrics import EVENTS_INGESTED, serve_metrics
 
 from .repository import PageWriteRepository
 from .sources import create_source
@@ -52,18 +52,22 @@ class BatchBuffer:
         if not self._buffer:
             self._last_flush = time.monotonic()
             return
-        try:
-            written = self._repo.upsert_many(self._buffer)
-            EVENTS_INGESTED.labels(source=self._source_name).inc(written)
-            log.info("flushed batch", extra={"count": written})
-        except Exception:  # noqa: BLE001 - log and drop batch, keep the stream alive
-            EVENTS_DROPPED.labels(source=self._source_name, reason="db_error").inc(
-                len(self._buffer)
-            )
-            log.exception("failed to flush batch", extra={"count": len(self._buffer)})
-        finally:
-            self._buffer.clear()
-            self._last_flush = time.monotonic()
+        attempt = 0
+        while True:
+            try:
+                written = self._repo.upsert_many(self._buffer)
+                EVENTS_INGESTED.labels(source=self._source_name).inc(written)
+                log.info("flushed batch", extra={"count": written})
+                self._buffer.clear()
+                self._last_flush = time.monotonic()
+                return
+            except Exception:  # noqa: BLE001 - retry; never drop SoR events
+                attempt += 1
+                log.exception(
+                    "failed to flush batch; retrying",
+                    extra={"count": len(self._buffer), "attempt": attempt},
+                )
+                time.sleep(min(2**attempt, 30.0))
 
 
 class IngestRunner:

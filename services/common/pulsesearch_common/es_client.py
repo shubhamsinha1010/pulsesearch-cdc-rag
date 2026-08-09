@@ -14,7 +14,7 @@ from elasticsearch import Elasticsearch, NotFoundError
 from elasticsearch.helpers import BulkIndexError, bulk
 
 from .config import ElasticsearchSettings, es_settings
-from .models import PageDocument
+from .models import PageDocument, utcnow
 
 
 def build_client(settings: Optional[ElasticsearchSettings] = None) -> Elasticsearch:
@@ -66,6 +66,7 @@ def index_mapping(embedding_dims: int) -> dict[str, Any]:
                 "event_time": {"type": "date"},
                 "updated_at": {"type": "date"},
                 "version": {"type": "long"},
+                "deleted": {"type": "boolean"},
                 "embedding": {
                     "type": "dense_vector",
                     "dims": embedding_dims,
@@ -98,9 +99,21 @@ class PageRepository:
 
     # -- schema management ------------------------------------------------
     def ensure_index(self, embedding_dims: int) -> bool:
-        """Create the index if missing. Returns True when newly created."""
+        """Create the index if missing. Returns True when newly created.
+
+        If the index already exists, verifies the ``dense_vector`` dims match so
+        a model/config mismatch cannot silently poison indexing.
+        """
 
         if self._client.indices.exists(index=self.index):
+            mapping = self._client.indices.get_mapping(index=self.index)
+            props = mapping[self.index]["mappings"].get("properties", {})
+            existing_dims = props.get("embedding", {}).get("dims")
+            if existing_dims is not None and int(existing_dims) != int(embedding_dims):
+                raise RuntimeError(
+                    f"index {self.index!r} embedding dims={existing_dims} "
+                    f"!= model dims={embedding_dims}; recreate the index"
+                )
             return False
         self._client.indices.create(index=self.index, **index_mapping(embedding_dims))
         return True
@@ -151,11 +164,23 @@ class PageRepository:
                 raise
             return len(actions) - len(real_errors)
 
-    def delete(self, doc_id: str) -> None:
-        try:
-            self._client.delete(index=self.index, id=doc_id)
-        except NotFoundError:
-            pass  # already absent — deletion is idempotent
+    def soft_delete(self, doc_id: str, version: int, *, wiki: str = "", title: str = "") -> None:
+        """Version-guarded soft-delete (tombstone upsert).
+
+        Hard ES deletes are not durable under external versioning / replays;
+        writing ``deleted=true`` with ``external_gte`` keeps tombstones
+        monotonic like normal upserts.
+        """
+
+        tombstone = PageDocument(
+            id=doc_id,
+            wiki=wiki,
+            title=title,
+            deleted=True,
+            version=version,
+            updated_at=utcnow(),
+        )
+        self.upsert(tombstone)
 
     # -- reads ------------------------------------------------------------
     def bm25_search(
@@ -193,10 +218,8 @@ class PageRepository:
             "query_vector": vector,
             "k": size,
             "num_candidates": max(num_candidates, size),
+            "filter": _build_filters(filters),
         }
-        filter_clauses = _build_filters(filters)
-        if filter_clauses:
-            knn["filter"] = filter_clauses
         resp = self._client.search(
             index=self.index,
             knn=knn,
@@ -212,16 +235,27 @@ class PageRepository:
             return None
         if not resp.get("found"):
             return None
-        return resp["_source"]
+        source = resp["_source"]
+        if source.get("deleted"):
+            return None
+        return source
 
     def count(self) -> int:
-        return self._client.count(index=self.index)["count"]
+        return self._client.count(
+            index=self.index,
+            query={"bool": {"filter": _live_doc_filters()}},
+        )["count"]
 
 
-def _build_filters(filters: Optional[dict[str, Any]]) -> list[dict[str, Any]]:
+def _live_doc_filters() -> list[dict[str, Any]]:
+    # Treat missing ``deleted`` as live so pre-tombstone docs still count.
+    return [{"bool": {"must_not": {"term": {"deleted": True}}}}]
+
+
+def _build_filters(filters: Optional[dict[str, Any]] | None = None) -> list[dict[str, Any]]:
+    clauses = _live_doc_filters()
     if not filters:
-        return []
-    clauses: list[dict[str, Any]] = []
+        return clauses
     for field, value in filters.items():
         if value is None:
             continue

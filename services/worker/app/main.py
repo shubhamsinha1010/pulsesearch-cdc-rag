@@ -32,8 +32,12 @@ log = configure_logging("worker")
 def _ensure_index_with_retry(repo: PageRepository, dims: int, attempts: int = 30) -> None:
     for attempt in range(1, attempts + 1):
         try:
-            created = repo.ensure_index(dims)
-            log.info("index ready", extra={"created": created, "index": repo.index})
+            index_created = repo.ensure_index(dims)
+            # Avoid LogRecord reserved attrs (e.g. "created") in extra=.
+            log.info(
+                "index ready",
+                extra={"index_created": index_created, "index": repo.index},
+            )
             return
         except Exception as exc:  # noqa: BLE001 - ES may still be booting
             log.warning(
@@ -48,6 +52,8 @@ def main() -> None:
     serve_metrics(observability_settings().metrics_port)
 
     embeddings = SentenceTransformerEmbeddings(embedding_settings().model_name)
+    # Load the model before creating/validating the index so dims match reality.
+    embeddings.embed("warmup")
     repo = PageRepository(settings=es_settings())
     _ensure_index_with_retry(repo, embeddings.dimensions)
 

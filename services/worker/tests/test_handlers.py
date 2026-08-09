@@ -38,13 +38,16 @@ def test_parse_create_produces_upsert_document():
     assert event.document.version == 1_700_000_000_000
 
 
-def test_parse_delete_has_no_document():
+def test_parse_delete_produces_tombstone_document():
     parser = DebeziumEventParser()
     event = parser.parse(_envelope("d", before=_row()))
     assert event is not None
     assert event.op.is_delete
-    assert event.document is None
+    assert event.document is not None
+    assert event.document.deleted is True
+    assert event.document.title == "Alan Turing"
     assert event.doc_id == "42"
+    assert event.document.version == 1_700_000_000_000
 
 
 def test_tinyint_booleans_are_coerced():
@@ -54,6 +57,10 @@ def test_tinyint_booleans_are_coerced():
     assert event.document.is_minor is False
 
 
-def test_unknown_operation_is_ignored():
+def test_unknown_operation_is_rejected():
     parser = DebeziumEventParser()
-    assert parser.parse(_envelope("x", after=_row())) is None
+    try:
+        parser.parse(_envelope("x", after=_row()))
+        assert False, "expected ValueError"
+    except ValueError as exc:
+        assert "unsupported Debezium op" in str(exc)

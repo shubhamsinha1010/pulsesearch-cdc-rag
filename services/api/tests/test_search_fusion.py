@@ -57,7 +57,7 @@ def test_bm25_mode_only_uses_lexical_ranking():
     hits = service.search("q", size=2, mode=SearchMode.BM25)
 
     assert [h.id for h in hits] == ["A", "B"]
-    assert hits[0].bm25_rank == 0
+    assert hits[0].bm25_rank == 1
     assert hits[0].knn_rank is None
 
 

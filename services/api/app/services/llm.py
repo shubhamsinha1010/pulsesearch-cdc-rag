@@ -1,7 +1,7 @@
 """LLM client abstraction (Strategy pattern).
 
 RAG depends on the :class:`LLMClient` protocol so the generation backend can be
-swapped (local Ollama, a hosted model, a deterministic fake for tests) without
+swapped (a hosted model like Groq, a deterministic fake for tests) without
 changing the RAG service (DIP/OCP).
 """
 
@@ -23,29 +23,46 @@ class LLMClient(Protocol):
         ...
 
 
-class OllamaClient:
-    """Talks to a local Ollama server (free, offline-capable)."""
+class GroqClient:
+    """Talks to Groq's OpenAI-compatible chat API (hosted, free tier).
+
+    Requires ``GROQ_API_KEY``. Fast inference; no local GPU needed. Because it
+    speaks the OpenAI schema, swapping to any other OpenAI-compatible provider
+    is just a base-url/model change (OCP).
+    """
 
     def __init__(self, settings: LLMSettings) -> None:
         self._settings = settings
-        self._client = httpx.Client(timeout=settings.request_timeout)
+        self._client = httpx.Client(
+            timeout=settings.request_timeout,
+            headers={"Authorization": f"Bearer {settings.groq_api_key}"},
+        )
 
     def generate(self, prompt: str, system: str | None = None) -> str:
-        payload = {
-            "model": self._settings.model,
-            "prompt": prompt,
-            "stream": False,
-            "options": {"temperature": 0.1},
-        }
+        if not self._settings.groq_api_key:
+            raise RuntimeError("GROQ_API_KEY is not configured")
+        messages = []
         if system:
-            payload["system"] = system
-        resp = self._client.post(f"{self._settings.base_url}/api/generate", json=payload)
+            messages.append({"role": "system", "content": system})
+        messages.append({"role": "user", "content": prompt})
+        payload = {
+            "model": self._settings.groq_model,
+            "messages": messages,
+            "temperature": 0.1,
+            "stream": False,
+        }
+        resp = self._client.post(
+            f"{self._settings.groq_base_url}/chat/completions", json=payload
+        )
         resp.raise_for_status()
-        return resp.json().get("response", "").strip()
+        data = resp.json()
+        return data["choices"][0]["message"]["content"].strip()
 
     def health(self) -> bool:
+        if not self._settings.groq_api_key:
+            return False
         try:
-            resp = self._client.get(f"{self._settings.base_url}/api/tags")
+            resp = self._client.get(f"{self._settings.groq_base_url}/models")
             return resp.status_code == 200
         except httpx.HTTPError:
             return False
@@ -55,7 +72,7 @@ class EchoLLMClient:
     """Deterministic fallback used when no LLM is available.
 
     Produces an extractive answer from the provided context so the RAG endpoint
-    stays functional (and demonstrable) even without Ollama running.
+    stays functional (and demonstrable) even without a real LLM configured.
     """
 
     def generate(self, prompt: str, system: str | None = None) -> str:  # noqa: D401
@@ -77,8 +94,9 @@ class EchoLLMClient:
 class FallbackLLMClient:
     """Delegates to a primary LLM and degrades gracefully to a fallback.
 
-    Keeps the RAG endpoint available even if the local Ollama server is not
-    running, so the project is always demonstrable (graceful degradation).
+    Keeps the RAG endpoint available even if the Groq API key is missing or the
+    service is unreachable, so the project is always demonstrable (graceful
+    degradation).
     """
 
     def __init__(self, primary: LLMClient, fallback: LLMClient) -> None:

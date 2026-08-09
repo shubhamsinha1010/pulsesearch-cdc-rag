@@ -140,33 +140,6 @@ services:
       timeout: 5s
       retries: 12
 
-  # --- Local LLM ---------------------------------------------------------
-  ollama:
-    image: ollama/ollama:latest
-    <<: *restart
-    ports:
-      - "11434:11434"
-    volumes:
-      - ollama-data:/root/.ollama
-    healthcheck:
-      test: ["CMD-SHELL", "ollama list >/dev/null 2>&1 || exit 1"]
-      interval: 15s
-      timeout: 5s
-      retries: 10
-
-  # Pulls the model once, then exits (RAG degrades gracefully until ready).
-  ollama-init:
-    image: ollama/ollama:latest
-    depends_on:
-      ollama:
-        condition: service_started
-    environment:
-      OLLAMA_HOST: http://ollama:11434
-    entrypoint: ["sh", "-c"]
-    command:
-      - "sleep 5 && ollama pull ${OLLAMA_MODEL:-llama3.2:3b}"
-    restart: "no"
-
   # --- Application services ----------------------------------------------
   ingest:
     build:
@@ -217,8 +190,9 @@ services:
       ES_URL: http://elasticsearch:9200
       KAFKA_BOOTSTRAP_SERVERS: redpanda:9092
       KAFKA_SOURCE_TOPIC: pulse.pulsesearch.pages
-      OLLAMA_BASE_URL: http://ollama:11434
-      OLLAMA_MODEL: ${OLLAMA_MODEL:-llama3.2:3b}
+      # RAG uses the Groq hosted API (free tier). Set GROQ_API_KEY in .env.
+      GROQ_API_KEY: ${GROQ_API_KEY:-}
+      GROQ_MODEL: ${GROQ_MODEL:-llama-3.1-8b-instant}
     ports:
       - "8000:8000"
 
@@ -265,5 +239,4 @@ volumes:
   mysql-data:
   redpanda-data:
   es-data:
-  ollama-data:
   grafana-data:

@@ -5,7 +5,7 @@
 PulseSearch ingests a continuous stream of real-world change events (Wikipedia's live edit firehose), treats **MySQL** as the system of record, streams every row change through **Debezium + Kafka (Redpanda)** into **Elasticsearch**, and serves:
 
 - **Hybrid search** combining BM25 (lexical) and dense-vector kNN (semantic) via **Reciprocal Rank Fusion**,
-- a **grounded RAG assistant** (local LLM via **Ollama**) that answers questions over the *live* index with citations and freshness guarantees, and
+- a **grounded RAG assistant** (**Groq** hosted LLM, free tier) that answers questions over the *live* index with citations and freshness guarantees, and
 - a **real-time WebSocket dashboard** that shows changes becoming searchable within seconds.
 
 Everything runs on your machine with Docker Compose. No cloud accounts, no API keys, no spend.
@@ -31,7 +31,7 @@ flowchart LR
   Kafka --> Hub["WebSocket hub"]
   Hub --> UI["Next.js dashboard"]
   API["FastAPI: hybrid search + RAG"] --> ES
-  API --> Ollama["Ollama (local LLM)"]
+  API --> LLM["LLM (Groq API, free tier)"]
   UI --> API
   Worker --> Prom["Prometheus"]
   API --> Prom
@@ -53,7 +53,7 @@ flowchart LR
 | Streaming log | Redpanda (Kafka API compatible) |
 | Search | Elasticsearch 8 (`dense_vector` kNN, free Basic license) |
 | Embeddings | `sentence-transformers/all-MiniLM-L6-v2` (384-dim, local) |
-| LLM | Ollama running `llama3.2:3b` (local) |
+| LLM | Groq API (hosted, free tier) — `llama-3.1-8b-instant` |
 | Backend | FastAPI + a dedicated Kafka consumer worker |
 | Frontend | Next.js 14 + TypeScript |
 | Observability | Prometheus + Grafana |
@@ -63,12 +63,14 @@ flowchart LR
 
 ## Quick start
 
-**Prerequisites:** Docker Desktop (or Docker Engine + Compose v2). ~6 GB RAM free is comfortable.
+**Prerequisites:** Docker Desktop / Colima (Docker Engine + Compose v2). ~6 GB RAM free is comfortable. For RAG, a free [Groq API key](https://console.groq.com/keys) (default provider).
 
 ```bash
-cp .env.example .env        # optional; sensible defaults are baked in
+cp .env.example .env        # then set GROQ_API_KEY=... (free key)
 make up                     # build images and start everything
 ```
+
+> RAG uses **Groq** (hosted, free tier) — no local GPU or model download needed. Just set `GROQ_API_KEY` in `.env`.
 
 The first build downloads models and images and can take several minutes. Then open:
 
@@ -119,7 +121,7 @@ The codebase is intentionally layered and dependency-inverted so each concern is
 - **Poison-message isolation.** Unparseable or repeatedly failing messages are routed to a **dead-letter topic** instead of wedging the stream.
 - **Application-level Reciprocal Rank Fusion.** Native RRF retrievers require a paid Elastic tier; PulseSearch fuses BM25 and kNN result lists in code (`_RRF_K = 60`), which keeps it free *and* makes the ranking explicit and tunable. Search results expose each hit's BM25 and kNN ranks for transparency.
 - **End-to-end sync latency as a first-class metric.** The worker records `source commit time → searchable in ES` as a Prometheus histogram, surfaced as p50/p95/p99 in Grafana.
-- **Grounded RAG.** The assistant answers strictly from retrieved context, cites sources with timestamps, reports the freshest source, and refuses (`grounded: false`) when retrieval is empty. If Ollama is unavailable, it degrades to an extractive fallback so the endpoint is always demonstrable.
+- **Grounded RAG.** The assistant answers strictly from retrieved context, cites sources with timestamps, reports the freshest source, and refuses (`grounded: false`) when retrieval is empty. If the Groq API is unavailable, it degrades to an extractive fallback so the endpoint is always demonstrable.
 
 ---
 
@@ -193,19 +195,19 @@ All settings have safe defaults and are overridable via environment variables (s
 
 - `INGEST_SOURCE` — `wikimedia` (default) or `github`.
 - `INGEST_WIKIS` — comma-separated wikis to keep (e.g. `enwiki`); empty means all.
-- `OLLAMA_MODEL` — the local model to pull and use for RAG (default `llama3.2:3b`).
+- `GROQ_API_KEY` / `GROQ_MODEL` — Groq credentials + model (default `llama-3.1-8b-instant`).
 - `EMBEDDING_MODEL` — must match between worker and API for kNN to be meaningful.
 
 ---
 
 ## Cost
 
-Zero. Every component is open-source and runs locally: the firehose is public and unauthenticated, embeddings and the LLM run on your CPU, and there are no managed cloud services. If you later want a public demo without paying, deploy only the Next.js frontend (Vercel/GitHub Pages free tier) and keep the pipeline as a documented local demo.
+Zero. The firehose is public and unauthenticated, embeddings run locally on CPU, and RAG uses **Groq's free API tier**. There are no paid/managed cloud services. If you later want a public demo without paying, deploy only the Next.js frontend (Vercel/GitHub Pages free tier) and keep the pipeline as a documented local demo.
 
 ---
 
 ## Troubleshooting
 
 - **Doc count stays at 0:** check `make status` — the Debezium connector should be `RUNNING`. Ensure MySQL came up healthy before Connect (Compose handles ordering, but a cold first boot can be slow).
-- **RAG says no model available:** the `ollama-init` container pulls the model on first boot; give it a few minutes, or run `docker compose exec ollama ollama pull llama3.2:3b`.
+- **RAG returns a plain extractive answer (not from the LLM):** the Groq API isn't reachable, so it fell back gracefully. Ensure `GROQ_API_KEY` is set in `.env` and check `curl -s localhost:8000/health/ready` shows `"llm": true`.
 - **Elasticsearch exits on start:** it needs a little memory headroom; the compose file pins the JVM heap to 512 MB. Increase Docker's memory limit if needed.

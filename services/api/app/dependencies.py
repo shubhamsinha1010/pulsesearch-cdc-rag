@@ -21,7 +21,7 @@ from pulsesearch_common.embeddings import (
 )
 from pulsesearch_common.es_client import PageRepository
 
-from .services.llm import EchoLLMClient, FallbackLLMClient, LLMClient, OllamaClient
+from .services.llm import EchoLLMClient, FallbackLLMClient, GroqClient, LLMClient
 from .services.rag_service import RAGService
 from .services.search_service import HybridSearchService
 from .ws.hub import LiveHub
@@ -52,7 +52,9 @@ def get_search_service() -> HybridSearchService:
 
 @lru_cache
 def get_llm() -> LLMClient:
-    return FallbackLLMClient(OllamaClient(llm_settings()), EchoLLMClient())
+    # Groq (hosted, free tier) wrapped in a graceful fallback so RAG stays
+    # available even if the API key is missing or the service is unreachable.
+    return FallbackLLMClient(GroqClient(llm_settings()), EchoLLMClient())
 
 
 @lru_cache

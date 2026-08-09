@@ -61,9 +61,14 @@ class EmbeddingSettings(_Base):
 
 
 class LLMSettings(_Base):
-    base_url: str = Field(default="http://ollama:11434", alias="OLLAMA_BASE_URL")
-    model: str = Field(default="llama3.2:3b", alias="OLLAMA_MODEL")
-    request_timeout: int = Field(default=120, alias="OLLAMA_TIMEOUT")
+    """Groq (hosted, free tier; OpenAI-compatible API) settings for RAG."""
+
+    request_timeout: int = Field(default=120, alias="LLM_TIMEOUT")
+    groq_base_url: str = Field(
+        default="https://api.groq.com/openai/v1", alias="GROQ_BASE_URL"
+    )
+    groq_api_key: str = Field(default="", alias="GROQ_API_KEY")
+    groq_model: str = Field(default="llama-3.1-8b-instant", alias="GROQ_MODEL")
 
 
 class IngestSettings(_Base):

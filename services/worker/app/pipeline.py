@@ -1,8 +1,7 @@
-"""Transform pipeline: change events -> enriched documents.
+"""Transform pipeline: change events -> searchable documents (fast path).
 
-Separates the CPU-bound enrichment (embeddings) from I/O (Kafka consume, ES
-write). Batches embedding computation for throughput. Depends on the
-:class:`EmbeddingProvider` abstraction, not a concrete model (DIP).
+Summary fetching is intentionally *not* on this path — a background enricher
+improves semantic quality after the document is already searchable.
 """
 
 from __future__ import annotations
@@ -12,7 +11,7 @@ from dataclasses import dataclass, field
 
 from pulsesearch_common.embeddings import EmbeddingProvider
 from pulsesearch_common.metrics import EMBEDDING_LATENCY
-from pulsesearch_common.models import PageDocument, PageRecord
+from pulsesearch_common.models import PageDocument
 
 from .handlers import ChangeEvent
 
@@ -54,12 +53,7 @@ class EnrichmentPipeline:
     def _attach_embeddings(self, documents: list[PageDocument]) -> None:
         if not documents:
             return
-        texts = [
-            PageRecord(
-                wiki=d.wiki, title=d.title, last_comment=d.last_comment
-            ).searchable_text()
-            for d in documents
-        ]
+        texts = [d.searchable_text() for d in documents]
         started = time.perf_counter()
         vectors = self._embeddings.embed_batch(texts)
         EMBEDDING_LATENCY.observe(time.perf_counter() - started)

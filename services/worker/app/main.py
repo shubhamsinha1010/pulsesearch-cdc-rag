@@ -12,6 +12,7 @@ import time
 
 from pulsesearch_common.config import (
     embedding_settings,
+    enrichment_settings,
     es_settings,
     kafka_settings,
     observability_settings,
@@ -22,9 +23,11 @@ from pulsesearch_common.logging import configure_logging
 from pulsesearch_common.metrics import serve_metrics
 
 from .consumer import SyncConsumer
+from .enrichment import NullSummaryClient, WikipediaSummaryClient
 from .handlers import DebeziumEventParser
 from .pipeline import EnrichmentPipeline
 from .sink import DeadLetterQueue, ElasticsearchSink
+from .summary_enricher import SummaryEnricher
 
 log = configure_logging("worker")
 
@@ -57,23 +60,47 @@ def main() -> None:
     repo = PageRepository(settings=es_settings())
     _ensure_index_with_retry(repo, embeddings.dimensions)
 
+    enrich_cfg = enrichment_settings()
+    summaries = WikipediaSummaryClient() if enrich_cfg.enabled else NullSummaryClient()
+    enricher = SummaryEnricher(
+        repository=repo,
+        embeddings=embeddings,
+        summaries=summaries,
+        enabled=enrich_cfg.enabled,
+        workers=enrich_cfg.workers,
+        queue_size=enrich_cfg.queue_size,
+        fetch_concurrency=enrich_cfg.fetch_concurrency,
+    )
+    log.info(
+        "summary enrichment configured",
+        extra={
+            "enabled": enrich_cfg.enabled,
+            "workers": enrich_cfg.workers,
+            "fetch_concurrency": enrich_cfg.fetch_concurrency,
+        },
+    )
+
     consumer = SyncConsumer(
         settings=kafka_settings(),
         parser=DebeziumEventParser(),
         pipeline=EnrichmentPipeline(embeddings),
-        sink=ElasticsearchSink(repo),
+        sink=ElasticsearchSink(repo, enricher=enricher),
         dlq=DeadLetterQueue(kafka_settings()),
     )
 
     def handle_signal(*_: object) -> None:
         log.info("shutdown signal received")
         consumer.stop()
+        enricher.stop()
 
     signal.signal(signal.SIGTERM, handle_signal)
     signal.signal(signal.SIGINT, handle_signal)
 
     log.info("worker starting")
-    consumer.run()
+    try:
+        consumer.run()
+    finally:
+        enricher.stop()
     log.info("worker stopped")
 
 

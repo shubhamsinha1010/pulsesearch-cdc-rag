@@ -56,6 +56,7 @@ def index_mapping(embedding_dims: int) -> dict[str, Any]:
                 },
                 "title_url": {"type": "keyword", "index": False},
                 "last_comment": {"type": "text", "analyzer": "pulse_text"},
+                "summary": {"type": "text", "analyzer": "pulse_text"},
                 "last_user": {"type": "keyword"},
                 "event_type": {"type": "keyword"},
                 "namespace": {"type": "integer"},
@@ -113,6 +114,14 @@ class PageRepository:
                 raise RuntimeError(
                     f"index {self.index!r} embedding dims={existing_dims} "
                     f"!= model dims={embedding_dims}; recreate the index"
+                )
+            # Additive field upgrades (safe on live indexes).
+            if "summary" not in props:
+                self._client.indices.put_mapping(
+                    index=self.index,
+                    properties={
+                        "summary": {"type": "text", "analyzer": "pulse_text"},
+                    },
                 )
             return False
         self._client.indices.create(index=self.index, **index_mapping(embedding_dims))
@@ -190,14 +199,8 @@ class PageRepository:
             "size": size,
             "query": {
                 "bool": {
-                    "must": {
-                        "multi_match": {
-                            "query": query,
-                            "fields": ["title^3", "last_comment"],
-                            "type": "best_fields",
-                            "fuzziness": "AUTO",
-                        }
-                    },
+                    "should": _bm25_should_clauses(query),
+                    "minimum_should_match": 1,
                     "filter": _build_filters(filters),
                 }
             },
@@ -212,21 +215,27 @@ class PageRepository:
         size: int,
         num_candidates: int = 100,
         filters: Optional[dict[str, Any]] = None,
+        min_score: Optional[float] = None,
     ) -> list[dict[str, Any]]:
+        # Over-fetch slightly when a score floor is applied so we still fill ``size``.
+        fetch_size = size if min_score is None else max(size * 3, size)
         knn: dict[str, Any] = {
             "field": "embedding",
             "query_vector": vector,
-            "k": size,
-            "num_candidates": max(num_candidates, size),
+            "k": fetch_size,
+            "num_candidates": max(num_candidates, fetch_size),
             "filter": _build_filters(filters),
         }
         resp = self._client.search(
             index=self.index,
             knn=knn,
-            size=size,
+            size=fetch_size,
             source={"excludes": ["embedding"]},
         )
-        return resp["hits"]["hits"]
+        hits = resp["hits"]["hits"]
+        if min_score is not None:
+            hits = [h for h in hits if float(h.get("_score") or 0.0) >= min_score]
+        return hits[:size]
 
     def get(self, doc_id: str) -> Optional[dict[str, Any]]:
         try:
@@ -250,6 +259,34 @@ class PageRepository:
 def _live_doc_filters() -> list[dict[str, Any]]:
     # Treat missing ``deleted`` as live so pre-tombstone docs still count.
     return [{"bool": {"must_not": {"term": {"deleted": True}}}}]
+
+
+def _bm25_should_clauses(query: str) -> list[dict[str, Any]]:
+    """Lexical clauses tuned for title-heavy Wikipedia change events.
+
+    Exact/near-exact title phrases get a large boost; multi-term queries use
+    ``operator=and`` and drop fuzziness so weak edit-summary noise does not
+    outrank real title matches.
+    """
+
+    tokens = [t for t in query.split() if t]
+    multi: dict[str, Any] = {
+        "query": query,
+        "fields": ["title^4", "summary^2", "last_comment"],
+        "type": "best_fields",
+    }
+    if len(tokens) <= 2:
+        multi["fuzziness"] = "AUTO"
+    elif len(tokens) <= 4:
+        multi["operator"] = "and"
+    else:
+        # Long conceptual queries should not require every token to match.
+        multi["minimum_should_match"] = "60%"
+
+    return [
+        {"match_phrase": {"title": {"query": query, "boost": 8.0}}},
+        {"multi_match": multi},
+    ]
 
 
 def _build_filters(filters: Optional[dict[str, Any]] | None = None) -> list[dict[str, Any]]:

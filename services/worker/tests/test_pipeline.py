@@ -50,3 +50,15 @@ def test_newer_delete_wins_over_earlier_upsert_in_same_batch():
     assert len(result.upserts) == 1
     assert result.upserts[0].deleted is True
     assert result.upserts[0].embedding is None
+
+
+def test_fast_path_does_not_block_on_summaries():
+    # Summaries are attached asynchronously after indexing; the sync pipeline
+    # must remain title/comment-only.
+    pipeline = EnrichmentPipeline(FakeEmbeddings())
+    events = [
+        ChangeEvent("1", Operation.CREATE, 100, _doc("1", "Climate change", 100)),
+    ]
+    result = pipeline.process(events)
+    assert result.upserts[0].summary is None
+    assert result.upserts[0].embedding is not None

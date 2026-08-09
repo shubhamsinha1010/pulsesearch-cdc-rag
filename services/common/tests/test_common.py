@@ -9,20 +9,43 @@ from __future__ import annotations
 
 import math
 
-from pulsesearch_common.embeddings import HashingEmbeddings
+from pulsesearch_common.embeddings import CachedEmbeddings, HashingEmbeddings
 from pulsesearch_common.es_client import _build_filters
 from pulsesearch_common.models import PageDocument, PageRecord
 
 
 def test_searchable_text_joins_title_and_comment():
     record = PageRecord(wiki="enwiki", title="Alan Turing", last_comment="typo fix")
-    assert "Alan Turing" in record.searchable_text()
-    assert "typo fix" in record.searchable_text()
+    text = record.searchable_text()
+    assert text.startswith("Alan Turing Alan Turing")
+    assert "typo fix" in text
 
 
 def test_searchable_text_handles_missing_comment():
     record = PageRecord(wiki="enwiki", title="Alan Turing")
-    assert record.searchable_text() == "Alan Turing"
+    assert record.searchable_text() == "Alan Turing Alan Turing"
+
+
+def test_searchable_text_prefers_summary_over_boilerplate_comment():
+    record = PageRecord(
+        wiki="enwiki",
+        title="Climate change",
+        last_comment='Added "Use American English" template per [[MOS:TIES]]',
+        summary="Long-term shifts in temperatures and weather patterns.",
+    )
+    text = record.searchable_text()
+    assert "Long-term shifts" in text
+    assert "American English" not in text
+
+
+def test_to_source_strips_boilerplate_comments():
+    doc = PageDocument(
+        id="1",
+        wiki="enwiki",
+        title="X",
+        last_comment='Added "Use American English" template per [[MOS:TIES]]',
+    )
+    assert "last_comment" not in doc.to_source(include_embedding=False)
 
 
 def test_to_source_can_exclude_embedding():
@@ -42,6 +65,14 @@ def test_hashing_embeddings_are_unit_normalised():
 def test_hashing_embeddings_are_deterministic():
     provider = HashingEmbeddings(dimensions=32)
     assert provider.embed("hybrid search") == provider.embed("hybrid search")
+
+
+def test_cached_embeddings_reuse_vectors():
+    inner = HashingEmbeddings(dimensions=16)
+    cached = CachedEmbeddings(inner, maxsize=8)
+    first = cached.embed("climate change")
+    second = cached.embed("Climate Change")  # case-insensitive cache key
+    assert first == second
 
 
 def test_build_filters_skips_none_values():

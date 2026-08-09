@@ -60,6 +60,15 @@ class EmbeddingSettings(_Base):
     dimensions: int = Field(default=384, alias="EMBEDDING_DIMENSIONS")
 
 
+class EnrichmentSettings(_Base):
+    """Post-index Wikipedia summary enrichment (async; off the sync critical path)."""
+
+    enabled: bool = Field(default=True, alias="SUMMARY_ENRICHMENT")
+    workers: int = Field(default=2, alias="SUMMARY_ENRICHMENT_WORKERS")
+    fetch_concurrency: int = Field(default=8, alias="SUMMARY_FETCH_CONCURRENCY")
+    queue_size: int = Field(default=2000, alias="SUMMARY_ENRICHMENT_QUEUE")
+
+
 class LLMSettings(_Base):
     """Groq (hosted, free tier; OpenAI-compatible API) settings for RAG."""
 
@@ -107,6 +116,11 @@ def es_settings() -> ElasticsearchSettings:
 @lru_cache
 def embedding_settings() -> EmbeddingSettings:
     return EmbeddingSettings()
+
+
+@lru_cache
+def enrichment_settings() -> EnrichmentSettings:
+    return EnrichmentSettings()
 
 
 @lru_cache

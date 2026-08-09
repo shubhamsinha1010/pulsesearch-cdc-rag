@@ -93,3 +93,32 @@ class HashingEmbeddings:
 
     def embed_batch(self, texts: list[str]) -> list[list[float]]:
         return [self.embed(t) for t in texts]
+
+
+class CachedEmbeddings:
+    """LRU cache around an :class:`EmbeddingProvider` for repeated queries."""
+
+    def __init__(self, inner: EmbeddingProvider, maxsize: int = 512) -> None:
+        from collections import OrderedDict
+
+        self._inner = inner
+        self._maxsize = maxsize
+        self._cache: OrderedDict[str, list[float]] = OrderedDict()
+
+    @property
+    def dimensions(self) -> int:
+        return self._inner.dimensions
+
+    def embed(self, text: str) -> list[float]:
+        key = text.strip().lower()
+        if key in self._cache:
+            self._cache.move_to_end(key)
+            return self._cache[key]
+        vector = self._inner.embed(text)
+        self._cache[key] = vector
+        if len(self._cache) > self._maxsize:
+            self._cache.popitem(last=False)
+        return vector
+
+    def embed_batch(self, texts: list[str]) -> list[list[float]]:
+        return [self.embed(t) for t in texts]

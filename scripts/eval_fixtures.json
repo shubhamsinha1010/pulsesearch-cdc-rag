@@ -1,0 +1,58 @@
+{
+  "cases": [
+    {
+      "id": "lexical-title",
+      "type": "search",
+      "query_from_index": true,
+      "modes": ["bm25", "hybrid"],
+      "expect_top_contains_title": true
+    },
+    {
+      "id": "noise-rejection",
+      "type": "search",
+      "query": "xyzzynonexistent12345",
+      "mode": "hybrid",
+      "expect_empty": true,
+      "forbid_title_prefix": ["User:", "Talk:"]
+    },
+    {
+      "id": "semantic-climate",
+      "type": "search",
+      "query": "climate change extreme weather heatwaves",
+      "mode": "hybrid",
+      "expect_any_title_regex": ["(?i)climate|weather|heat|el.?ni", "(?i)drought|temperature|warming"],
+      "expect_namespace": 0,
+      "min_hits": 1
+    },
+    {
+      "id": "semantic-space",
+      "type": "search",
+      "query": "satellite spacecraft orbit",
+      "mode": "hybrid",
+      "expect_any_title_regex": ["(?i)satellit|rocket|spacecraft|space|orbit|launch"],
+      "expect_namespace": 0,
+      "min_hits": 1
+    },
+    {
+      "id": "semantic-football",
+      "type": "search",
+      "query": "football championship tournament match",
+      "mode": "hybrid",
+      "expect_any_title_regex": ["(?i)football|soccer|championship|tournament|cup"],
+      "expect_namespace": 0,
+      "min_hits": 1
+    },
+    {
+      "id": "rag-refuse-ooc",
+      "type": "rag",
+      "question": "Who invented the telephone in 1876 according to patent law?",
+      "expect_grounded": false
+    },
+    {
+      "id": "rag-refuse-empty-topic",
+      "type": "rag",
+      "question": "What is the capital of Atlantis undersea parliament?",
+      "expect_grounded": false
+    }
+  ]
+}

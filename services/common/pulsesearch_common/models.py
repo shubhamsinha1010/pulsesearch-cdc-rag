@@ -17,6 +17,8 @@ from typing import Any, Optional
 
 from pydantic import BaseModel, Field
 
+from .text import build_searchable_text, clean_edit_comment
+
 
 def utcnow() -> datetime:
     return datetime.now(timezone.utc)
@@ -36,12 +38,16 @@ class PageRecord(BaseModel):
     is_minor: bool = False
     length_new: Optional[int] = None
     event_time: Optional[datetime] = None
+    summary: Optional[str] = None
 
     def searchable_text(self) -> str:
         """Concatenate the fields we want the embedding model to see."""
 
-        parts = [self.title, self.last_comment or ""]
-        return " \u2014 ".join(p for p in parts if p).strip()
+        return build_searchable_text(
+            self.title,
+            summary=self.summary,
+            last_comment=self.last_comment,
+        )
 
 
 class PageDocument(BaseModel):
@@ -61,6 +67,8 @@ class PageDocument(BaseModel):
     edit_count: int = 1
     event_time: Optional[datetime] = None
     updated_at: datetime = Field(default_factory=utcnow)
+    # Optional Wikipedia lead/summary used to ground embeddings + RAG.
+    summary: Optional[str] = None
     # Monotonic version used for idempotent, out-of-order-safe upserts.
     version: int = 0
     # Soft-delete tombstone so deletes stay version-guarded like upserts.
@@ -71,7 +79,21 @@ class PageDocument(BaseModel):
         data = self.model_dump(exclude_none=True)
         if not include_embedding:
             data.pop("embedding", None)
+        # Persist cleaned comments so retrieval/RAG do not surface MOS noise.
+        if "last_comment" in data:
+            cleaned = clean_edit_comment(data.get("last_comment"))
+            if cleaned:
+                data["last_comment"] = cleaned
+            else:
+                data.pop("last_comment", None)
         return data
+
+    def searchable_text(self) -> str:
+        return build_searchable_text(
+            self.title,
+            summary=self.summary,
+            last_comment=self.last_comment,
+        )
 
 
 class SearchHit(BaseModel):

@@ -31,10 +31,18 @@ def search(
     size: int = Query(10, ge=1, le=50),
     mode: SearchMode = Query(SearchMode.HYBRID),
     wiki: Optional[str] = Query(None, description="Restrict to a single wiki"),
+    namespace: Optional[int] = Query(
+        0,
+        description="Wikipedia namespace (default 0 = main articles). "
+        "Use -1 to search all namespaces.",
+    ),
     service: HybridSearchService = Depends(get_search_service),
 ) -> SearchResponse:
     started = time.perf_counter()
-    hits = service.search(query=q, size=size, mode=mode, wiki=wiki)
+    ns = None if namespace is not None and namespace < 0 else namespace
+    hits = service.search(
+        query=q, size=size, mode=mode, wiki=wiki, namespace=ns
+    )
     took_ms = (time.perf_counter() - started) * 1000
 
     SEARCH_REQUESTS.labels(mode=mode.value).inc()

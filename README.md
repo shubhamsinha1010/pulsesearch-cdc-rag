@@ -211,3 +211,5 @@ Zero. The firehose is public and unauthenticated, embeddings run locally on CPU,
 - **Doc count stays at 0:** check `make status` — the Debezium connector should be `RUNNING`. Ensure MySQL came up healthy before Connect (Compose handles ordering, but a cold first boot can be slow).
 - **RAG returns a plain extractive answer (not from the LLM):** the Groq API isn't reachable, so it fell back gracefully. Ensure `GROQ_API_KEY` is set in `.env` and check `curl -s localhost:8000/health/ready` shows `"llm": true`.
 - **Elasticsearch exits on start:** it needs a little memory headroom; the compose file pins the JVM heap to 512 MB. Increase Docker's memory limit if needed.
+- **Search feels off-topic:** the API defaults to Wikipedia main-namespace articles (`namespace=0`). Pass `namespace=-1` to search all namespaces. Live accuracy probe: `python scripts/eval_search_accuracy.py`.
+- **Sync latency looks high:** Wikipedia summaries are fetched *after* indexing (async). Disable with `SUMMARY_ENRICHMENT=false` if you want the absolute minimum CDC path.

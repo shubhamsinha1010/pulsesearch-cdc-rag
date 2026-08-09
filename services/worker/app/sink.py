@@ -22,13 +22,19 @@ from pulsesearch_common.metrics import (
 )
 
 from .pipeline import PipelineResult
+from .summary_enricher import SummaryEnricher
 
 
 class ElasticsearchSink:
     """Writes enriched documents to Elasticsearch (Repository-backed)."""
 
-    def __init__(self, repository: PageRepository) -> None:
+    def __init__(
+        self,
+        repository: PageRepository,
+        enricher: SummaryEnricher | None = None,
+    ) -> None:
         self._repo = repository
+        self._enricher = enricher
 
     def write(self, result: PipelineResult) -> int:
         if not result.upserts:
@@ -36,8 +42,10 @@ class ElasticsearchSink:
         written = self._repo.bulk_upsert(result.upserts)
         DOCS_INDEXED.inc(written)
         self._record_latency(result)
+        if self._enricher is not None:
+            live = [d for d in result.upserts if not d.deleted]
+            self._enricher.submit(live)
         return written
-
     @staticmethod
     def _record_latency(result: PipelineResult) -> None:
         now_ms = time.time() * 1000

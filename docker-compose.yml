@@ -169,6 +169,9 @@ services:
       KAFKA_SOURCE_TOPIC: pulse.pulsesearch.pages
       ES_URL: http://elasticsearch:9200
       METRICS_PORT: 9100
+      SUMMARY_ENRICHMENT: ${SUMMARY_ENRICHMENT:-true}
+      SUMMARY_ENRICHMENT_WORKERS: ${SUMMARY_ENRICHMENT_WORKERS:-2}
+      SUMMARY_FETCH_CONCURRENCY: ${SUMMARY_FETCH_CONCURRENCY:-8}
 
   api:
     build:

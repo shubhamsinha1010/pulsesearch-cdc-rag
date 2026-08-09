@@ -15,6 +15,7 @@ from pulsesearch_common.config import (
     llm_settings,
 )
 from pulsesearch_common.embeddings import (
+    CachedEmbeddings,
     EmbeddingProvider,
     SentenceTransformerEmbeddings,
 )
@@ -35,7 +36,7 @@ def get_repository() -> PageRepository:
 def get_embeddings() -> EmbeddingProvider:
     # Queries must use the *same* model the worker used to embed documents.
     # Never fall back to a different embedding space — that silently breaks kNN.
-    provider: EmbeddingProvider = SentenceTransformerEmbeddings()
+    provider: EmbeddingProvider = CachedEmbeddings(SentenceTransformerEmbeddings())
     provider.embed("warmup")  # force lazy load; surfaces errors early
     return provider
 

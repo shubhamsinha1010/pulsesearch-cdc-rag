@@ -1,6 +1,6 @@
 # PulseSearch
 
-**Real-time, AI-native search over a live data firehose — Change Data Capture → Hybrid Search → Grounded RAG. Fully local, zero cost.**
+**Real-time, AI-native search over a live data firehose — Change Data Capture → Hybrid Search → Grounded RAG.** Local embeddings + free-tier Groq — no paid cloud services.
 
 PulseSearch ingests a continuous stream of real-world change events (Wikipedia's live edit firehose), treats **MySQL** as the system of record, streams every row change through **Debezium + Kafka (Redpanda)** into **Elasticsearch**, and serves:
 
@@ -8,7 +8,14 @@ PulseSearch ingests a continuous stream of real-world change events (Wikipedia's
 - a **grounded RAG assistant** (**Groq** hosted LLM, free tier) that answers questions over the *live* index with citations and freshness guarantees, and
 - a **real-time WebSocket dashboard** that shows changes becoming searchable within seconds.
 
-Everything runs on your machine with Docker Compose. No cloud accounts, no API keys, no spend.
+Everything runs on your machine with Docker Compose. Embeddings stay local; RAG uses a free Groq API key (no paid cloud services).
+
+---
+
+## Links
+
+- **Case study:** https://shubhamsinha1010.github.io/work/pulsesearch.html
+- **DeepWiki:** https://deepwiki.com/shubhamsinha1010/pulsesearch-cdc-rag
 
 ---
 

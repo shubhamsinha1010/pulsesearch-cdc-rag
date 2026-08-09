@@ -18,7 +18,6 @@ from pulsesearch_common.es_client import PageRepository
 from pulsesearch_common.metrics import (
     DLQ_MESSAGES,
     DOCS_INDEXED,
-    SYNC_FAILURES,
     SYNC_LATENCY,
 )
 
@@ -32,17 +31,11 @@ class ElasticsearchSink:
         self._repo = repository
 
     def write(self, result: PipelineResult) -> int:
-        written = 0
-        if result.upserts:
-            written = self._repo.bulk_upsert(result.upserts)
-            DOCS_INDEXED.inc(written)
-            self._record_latency(result)
-        for doc_id in result.delete_ids:
-            try:
-                self._repo.delete(doc_id)
-            except Exception:  # noqa: BLE001
-                SYNC_FAILURES.labels(stage="delete").inc()
-                raise
+        if not result.upserts:
+            return 0
+        written = self._repo.bulk_upsert(result.upserts)
+        DOCS_INDEXED.inc(written)
+        self._record_latency(result)
         return written
 
     @staticmethod

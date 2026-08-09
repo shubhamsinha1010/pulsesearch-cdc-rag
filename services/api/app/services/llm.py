@@ -79,8 +79,14 @@ class EchoLLMClient:
         marker = "CONTEXT:"
         if marker in prompt:
             context = prompt.split(marker, 1)[1]
-            snippet = context.strip().splitlines()
-            head = " ".join(line.strip("- ") for line in snippet[:3])
+            if "\n\nAnswer the question" in context:
+                context = context.split("\n\nAnswer the question", 1)[0]
+            lines = [
+                line.strip("- ").strip()
+                for line in context.strip().splitlines()
+                if line.strip().startswith("[")
+            ]
+            head = " ".join(lines[:3])
             return (
                 "Based on the most recent indexed changes: "
                 + (head[:400] if head else "no relevant context was found.")
@@ -110,4 +116,5 @@ class FallbackLLMClient:
             return self._fallback.generate(prompt, system=system)
 
     def health(self) -> bool:
-        return self._primary.health() or self._fallback.health()
+        # Report primary health only so the UI LED means "hosted LLM is live".
+        return self._primary.health()

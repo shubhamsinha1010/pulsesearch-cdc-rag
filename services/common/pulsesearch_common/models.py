@@ -63,6 +63,8 @@ class PageDocument(BaseModel):
     updated_at: datetime = Field(default_factory=utcnow)
     # Monotonic version used for idempotent, out-of-order-safe upserts.
     version: int = 0
+    # Soft-delete tombstone so deletes stay version-guarded like upserts.
+    deleted: bool = False
     embedding: Optional[list[float]] = None
 
     def to_source(self, include_embedding: bool = True) -> dict[str, Any]:

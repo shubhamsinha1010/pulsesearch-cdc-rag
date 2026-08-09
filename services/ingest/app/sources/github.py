@@ -9,6 +9,7 @@ source.
 from __future__ import annotations
 
 import time
+from collections import OrderedDict
 from datetime import datetime, timezone
 from typing import Iterator, Optional
 
@@ -32,7 +33,7 @@ class GitHubSource:
             self._headers["Authorization"] = f"Bearer {token}"
 
     def stream(self) -> Iterator[PageRecord]:
-        seen: set[str] = set()
+        seen: OrderedDict[str, None] = OrderedDict()
         with httpx.Client(timeout=30.0, headers=self._headers) as client:
             while True:
                 try:
@@ -40,17 +41,17 @@ class GitHubSource:
                     resp.raise_for_status()
                     for event in resp.json():
                         event_id = event.get("id")
-                        if event_id in seen:
+                        if not event_id or event_id in seen:
                             continue
-                        seen.add(event_id)
+                        seen[event_id] = None
                         record = self._parse(event)
                         if record is not None:
                             yield record
                 except httpx.HTTPError:
                     pass
-                # Bound the dedupe set so it does not grow forever.
-                if len(seen) > 5000:
-                    seen = set(list(seen)[-1000:])
+                # Bound the dedupe set to the most recently seen ids.
+                while len(seen) > 1000:
+                    seen.popitem(last=False)
                 time.sleep(self._poll_interval)
 
     def _parse(self, event: dict) -> Optional[PageRecord]:

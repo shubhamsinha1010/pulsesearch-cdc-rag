@@ -54,25 +54,24 @@ class DebeziumEventParser:
         op_raw = payload.get("op")
         try:
             op = Operation(op_raw)
-        except ValueError:
-            return None
+        except ValueError as exc:
+            raise ValueError(f"unsupported Debezium op: {op_raw!r}") from exc
 
         ts_ms = int(payload.get("ts_ms") or 0)
         row = payload.get("before") if op.is_delete else payload.get("after")
         if not row:
-            return None
+            raise ValueError(f"missing before/after for op={op.value}")
 
         doc_id = str(row.get("id"))
         if doc_id in (None, "None"):
-            return None
+            raise ValueError("change event missing row id")
 
-        if op.is_delete:
-            return ChangeEvent(doc_id=doc_id, op=op, source_ts_ms=ts_ms, document=None)
-
-        document = self._row_to_document(row, ts_ms)
+        document = self._row_to_document(row, ts_ms, deleted=op.is_delete)
         return ChangeEvent(doc_id=doc_id, op=op, source_ts_ms=ts_ms, document=document)
 
-    def _row_to_document(self, row: dict[str, Any], ts_ms: int) -> PageDocument:
+    def _row_to_document(
+        self, row: dict[str, Any], ts_ms: int, *, deleted: bool = False
+    ) -> PageDocument:
         return PageDocument(
             id=str(row.get("id")),
             wiki=row.get("wiki") or "",
@@ -89,6 +88,7 @@ class DebeziumEventParser:
             event_time=_debezium_datetime(row.get("event_time")),
             # ``ts_ms`` is monotonic per row and drives version-guarded upserts.
             version=ts_ms,
+            deleted=deleted,
         )
 
 

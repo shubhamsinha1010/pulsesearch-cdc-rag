@@ -30,8 +30,14 @@ class _BoomClient:
 
 def test_fallback_uses_secondary_on_primary_failure():
     fallback = FallbackLLMClient(_BoomClient(), EchoLLMClient())
-    prompt = "QUESTION: q\n\nCONTEXT:\n- Alan Turing: crypto\n"
+    prompt = (
+        "QUESTION: q\n\nCONTEXT:\n[1] (enwiki, t) Alan Turing: crypto\n\n"
+        "Answer the question using only the context above and cite sources "
+        "with [n]."
+    )
     answer = fallback.generate(prompt)
     assert "Based on the most recent indexed changes" in answer
-    # health is true because the Echo fallback is always healthy.
-    assert fallback.health() is True
+    assert "Alan Turing" in answer
+    assert "Answer the question" not in answer
+    # health reflects the primary provider, not the Echo fallback.
+    assert fallback.health() is False

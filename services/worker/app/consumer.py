@@ -41,7 +41,7 @@ class SyncConsumer:
         dlq: DeadLetterQueue,
         batch_size: int = 200,
         poll_timeout: float = 1.0,
-        max_write_retries: int = 3,
+        max_write_retries: int = 8,
     ) -> None:
         self._settings = settings
         self._parser = parser
@@ -101,7 +101,11 @@ class SyncConsumer:
 
         if events:
             result = self._pipeline.process(events)
-            self._write_with_retries(result, batch)
+            if not self._write_with_retries(result, batch):
+                # Offsets stay uncommitted so the batch is redelivered after a
+                # brief pause (transient ES outages should not create holes).
+                time.sleep(2.0)
+                return
 
         # Commit only after the whole batch has been handled (at-least-once).
         self._consumer.commit(asynchronous=False)
@@ -118,30 +122,36 @@ class SyncConsumer:
         except Exception as exc:  # noqa: BLE001 - poison message
             SYNC_FAILURES.labels(stage="parse").inc()
             self._dlq.publish(raw, error=f"parse: {exc}", key=msg.key())
+            self._dlq.flush()
             log.warning("routed message to DLQ", extra={"error": str(exc)})
             return None
 
-    def _write_with_retries(self, result, batch: list[Message]) -> None:
+    def _write_with_retries(self, result, batch: list[Message]) -> bool:
+        """Return True when the batch is safe to commit."""
+
         attempt = 0
         while True:
             try:
                 self._sink.write(result)
-                return
+                return True
             except Exception as exc:  # noqa: BLE001
                 attempt += 1
                 SYNC_FAILURES.labels(stage="write").inc()
                 if attempt >= self._max_write_retries:
                     log.error(
-                        "write failed after retries; DLQ-ing batch",
+                        "write failed after retries; holding offsets (no commit)",
                         extra={"attempts": attempt, "error": str(exc)},
                     )
+                    # Preserve the failing payloads for inspection, but do not
+                    # commit — avoiding permanent index holes from brief outages.
                     for msg in batch:
                         if msg.value() is not None:
                             self._dlq.publish(
                                 msg.value(), error=f"write: {exc}", key=msg.key()
                             )
-                    return
-                backoff = min(2**attempt * 0.5, 10.0)
+                    self._dlq.flush()
+                    return False
+                backoff = min(2**attempt * 0.5, 15.0)
                 log.warning(
                     "write failed; retrying",
                     extra={"attempt": attempt, "backoff": backoff},

@@ -45,6 +45,13 @@ def test_hashing_embeddings_are_deterministic():
 
 
 def test_build_filters_skips_none_values():
-    assert _build_filters(None) == []
-    assert _build_filters({"wiki": None}) == []
-    assert _build_filters({"wiki": "enwiki"}) == [{"term": {"wiki": "enwiki"}}]
+    assert _build_filters(None) == [
+        {"bool": {"must_not": {"term": {"deleted": True}}}}
+    ]
+    assert _build_filters({"wiki": None}) == [
+        {"bool": {"must_not": {"term": {"deleted": True}}}}
+    ]
+    assert _build_filters({"wiki": "enwiki"}) == [
+        {"bool": {"must_not": {"term": {"deleted": True}}}},
+        {"term": {"wiki": "enwiki"}},
+    ]

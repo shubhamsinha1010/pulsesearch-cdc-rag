@@ -115,8 +115,8 @@ class HybridSearchService:
                     id=hit["_id"],
                     score=float(hit.get("_score") or 0.0),
                     document=_to_document(hit["_id"], hit["_source"]),
-                    bm25_rank=rank if source == "bm25" else None,
-                    knn_rank=rank if source == "knn" else None,
+                    bm25_rank=_rank_or_none(rank if source == "bm25" else None),
+                    knn_rank=_rank_or_none(rank if source == "knn" else None),
                 )
             )
         return results

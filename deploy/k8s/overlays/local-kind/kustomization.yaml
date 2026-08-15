@@ -4,5 +4,5 @@ namespace: pulsesearch
 resources:
   - ../../base
   - secret.example.yaml
-patchesStrategicMerge:
-  - configmap-patch.yaml
+patches:
+  - path: configmap-patch.yaml

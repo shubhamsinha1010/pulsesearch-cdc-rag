@@ -4,40 +4,122 @@ updates:
     directory: /
     schedule:
       interval: weekly
-    open-pull-requests-limit: 5
+    open-pull-requests-limit: 2
+    groups:
+      github-actions:
+        patterns:
+          - "*"
 
   - package-ecosystem: pip
     directory: /
     schedule:
       interval: weekly
-    open-pull-requests-limit: 5
+    open-pull-requests-limit: 2
+    groups:
+      python-dev-tools:
+        patterns:
+          - "ruff"
+          - "bandit"
+          - "pip-audit"
+          - "pytest"
+          - "pytest-*"
 
   - package-ecosystem: pip
     directory: /services/common
     schedule:
       interval: weekly
-    open-pull-requests-limit: 5
+    open-pull-requests-limit: 2
+    ignore:
+      - dependency-name: "elasticsearch"
+        update-types: ["version-update:semver-major"]
+    groups:
+      common-python:
+        patterns:
+          - "*"
+        exclude-patterns:
+          - "elasticsearch"
 
   - package-ecosystem: pip
     directory: /services/api
     schedule:
       interval: weekly
-    open-pull-requests-limit: 5
+    open-pull-requests-limit: 2
+    ignore:
+      - dependency-name: "elasticsearch"
+        update-types: ["version-update:semver-major"]
+      - dependency-name: "sentence-transformers"
+        update-types: ["version-update:semver-major"]
+      - dependency-name: "fastapi"
+        update-types: ["version-update:semver-major"]
+    groups:
+      api-python:
+        patterns:
+          - "*"
+        exclude-patterns:
+          - "elasticsearch"
+          - "sentence-transformers"
+          - "fastapi"
 
   - package-ecosystem: pip
     directory: /services/worker
     schedule:
       interval: weekly
-    open-pull-requests-limit: 5
+    open-pull-requests-limit: 2
+    ignore:
+      - dependency-name: "elasticsearch"
+        update-types: ["version-update:semver-major"]
+      - dependency-name: "sentence-transformers"
+        update-types: ["version-update:semver-major"]
+      - dependency-name: "confluent-kafka"
+        update-types: ["version-update:semver-major"]
+    groups:
+      worker-python:
+        patterns:
+          - "*"
+        exclude-patterns:
+          - "elasticsearch"
+          - "sentence-transformers"
+          - "confluent-kafka"
 
   - package-ecosystem: pip
     directory: /services/ingest
     schedule:
       interval: weekly
-    open-pull-requests-limit: 5
+    open-pull-requests-limit: 2
+    groups:
+      ingest-python:
+        patterns:
+          - "*"
 
   - package-ecosystem: npm
     directory: /web
     schedule:
       interval: weekly
-    open-pull-requests-limit: 5
+    open-pull-requests-limit: 2
+    ignore:
+      - dependency-name: "next"
+        update-types: ["version-update:semver-major"]
+      - dependency-name: "react"
+        update-types: ["version-update:semver-major"]
+      - dependency-name: "react-dom"
+        update-types: ["version-update:semver-major"]
+      - dependency-name: "typescript"
+        update-types: ["version-update:semver-major"]
+      - dependency-name: "eslint"
+        update-types: ["version-update:semver-major"]
+      - dependency-name: "@types/react"
+        update-types: ["version-update:semver-major"]
+      - dependency-name: "@types/react-dom"
+        update-types: ["version-update:semver-major"]
+    groups:
+      web-npm:
+        patterns:
+          - "*"
+        exclude-patterns:
+          - "next"
+          - "react"
+          - "react-dom"
+          - "typescript"
+          - "eslint"
+          - "@types/react"
+          - "@types/react-dom"

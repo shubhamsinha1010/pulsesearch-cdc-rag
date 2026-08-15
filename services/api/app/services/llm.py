@@ -16,11 +16,9 @@ from pulsesearch_common.config import LLMSettings
 
 @runtime_checkable
 class LLMClient(Protocol):
-    def generate(self, prompt: str, system: str | None = None) -> str:
-        ...
+    def generate(self, prompt: str, system: str | None = None) -> str: ...
 
-    def health(self) -> bool:
-        ...
+    def health(self) -> bool: ...
 
 
 class GroqClient:
@@ -51,9 +49,7 @@ class GroqClient:
             "temperature": 0.1,
             "stream": False,
         }
-        resp = self._client.post(
-            f"{self._settings.groq_base_url}/chat/completions", json=payload
-        )
+        resp = self._client.post(f"{self._settings.groq_base_url}/chat/completions", json=payload)
         resp.raise_for_status()
         data = resp.json()
         return data["choices"][0]["message"]["content"].strip()
@@ -75,7 +71,7 @@ class EchoLLMClient:
     stays functional (and demonstrable) even without a real LLM configured.
     """
 
-    def generate(self, prompt: str, system: str | None = None) -> str:  # noqa: D401
+    def generate(self, prompt: str, system: str | None = None) -> str:
         marker = "CONTEXT:"
         if marker in prompt:
             context = prompt.split(marker, 1)[1]
@@ -87,9 +83,8 @@ class EchoLLMClient:
                 if line.strip().startswith("[")
             ]
             head = " ".join(lines[:3])
-            return (
-                "Based on the most recent indexed changes: "
-                + (head[:400] if head else "no relevant context was found.")
+            return "Based on the most recent indexed changes: " + (
+                head[:400] if head else "no relevant context was found."
             )
         return "No language model is currently available to generate an answer."
 
@@ -112,7 +107,7 @@ class FallbackLLMClient:
     def generate(self, prompt: str, system: str | None = None) -> str:
         try:
             return self._primary.generate(prompt, system=system)
-        except Exception:  # noqa: BLE001 - fall back rather than 500
+        except Exception:
             return self._fallback.generate(prompt, system=system)
 
     def health(self) -> bool:

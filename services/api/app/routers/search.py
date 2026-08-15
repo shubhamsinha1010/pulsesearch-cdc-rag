@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import time
-from typing import Optional
 
 from fastapi import APIRouter, Depends, Query
 from pydantic import BaseModel
@@ -30,8 +29,8 @@ def search(
     q: str = Query(..., min_length=1, description="Search query"),
     size: int = Query(10, ge=1, le=50),
     mode: SearchMode = Query(SearchMode.HYBRID),
-    wiki: Optional[str] = Query(None, description="Restrict to a single wiki"),
-    namespace: Optional[int] = Query(
+    wiki: str | None = Query(None, description="Restrict to a single wiki"),
+    namespace: int | None = Query(
         0,
         description="Wikipedia namespace (default 0 = main articles). "
         "Use -1 to search all namespaces.",
@@ -40,9 +39,7 @@ def search(
 ) -> SearchResponse:
     started = time.perf_counter()
     ns = None if namespace is not None and namespace < 0 else namespace
-    hits = service.search(
-        query=q, size=size, mode=mode, wiki=wiki, namespace=ns
-    )
+    hits = service.search(query=q, size=size, mode=mode, wiki=wiki, namespace=ns)
     took_ms = (time.perf_counter() - started) * 1000
 
     SEARCH_REQUESTS.labels(mode=mode.value).inc()

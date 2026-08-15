@@ -12,8 +12,8 @@ schema and one (de)serialisation contract (Single Source of Truth).
 
 from __future__ import annotations
 
-from datetime import datetime, timezone
-from typing import Any, Optional
+from datetime import UTC, datetime
+from typing import Any
 
 from pydantic import BaseModel, Field
 
@@ -21,7 +21,7 @@ from .text import build_searchable_text, clean_edit_comment
 
 
 def utcnow() -> datetime:
-    return datetime.now(timezone.utc)
+    return datetime.now(UTC)
 
 
 class PageRecord(BaseModel):
@@ -29,16 +29,16 @@ class PageRecord(BaseModel):
 
     wiki: str
     title: str
-    title_url: Optional[str] = None
-    last_comment: Optional[str] = None
-    last_user: Optional[str] = None
-    event_type: Optional[str] = None
+    title_url: str | None = None
+    last_comment: str | None = None
+    last_user: str | None = None
+    event_type: str | None = None
     namespace: int = 0
     is_bot: bool = False
     is_minor: bool = False
-    length_new: Optional[int] = None
-    event_time: Optional[datetime] = None
-    summary: Optional[str] = None
+    length_new: int | None = None
+    event_time: datetime | None = None
+    summary: str | None = None
 
     def searchable_text(self) -> str:
         """Concatenate the fields we want the embedding model to see."""
@@ -56,24 +56,24 @@ class PageDocument(BaseModel):
     id: str
     wiki: str
     title: str
-    title_url: Optional[str] = None
-    last_comment: Optional[str] = None
-    last_user: Optional[str] = None
-    event_type: Optional[str] = None
+    title_url: str | None = None
+    last_comment: str | None = None
+    last_user: str | None = None
+    event_type: str | None = None
     namespace: int = 0
     is_bot: bool = False
     is_minor: bool = False
-    length_new: Optional[int] = None
+    length_new: int | None = None
     edit_count: int = 1
-    event_time: Optional[datetime] = None
+    event_time: datetime | None = None
     updated_at: datetime = Field(default_factory=utcnow)
     # Optional Wikipedia lead/summary used to ground embeddings + RAG.
-    summary: Optional[str] = None
+    summary: str | None = None
     # Monotonic version used for idempotent, out-of-order-safe upserts.
     version: int = 0
     # Soft-delete tombstone so deletes stay version-guarded like upserts.
     deleted: bool = False
-    embedding: Optional[list[float]] = None
+    embedding: list[float] | None = None
 
     def to_source(self, include_embedding: bool = True) -> dict[str, Any]:
         data = self.model_dump(exclude_none=True)
@@ -102,8 +102,8 @@ class SearchHit(BaseModel):
     id: str
     score: float
     document: PageDocument
-    bm25_rank: Optional[int] = None
-    knn_rank: Optional[int] = None
+    bm25_rank: int | None = None
+    knn_rank: int | None = None
 
 
 class Citation(BaseModel):
@@ -111,13 +111,13 @@ class Citation(BaseModel):
 
     id: str
     title: str
-    title_url: Optional[str] = None
+    title_url: str | None = None
     wiki: str
-    event_time: Optional[datetime] = None
+    event_time: datetime | None = None
 
 
 class RAGAnswer(BaseModel):
     answer: str
     citations: list[Citation] = Field(default_factory=list)
     grounded: bool = True
-    freshest_source: Optional[datetime] = None
+    freshest_source: datetime | None = None

@@ -65,7 +65,7 @@ flowchart LR
 | Frontend | Next.js 14 + TypeScript |
 | Observability | Prometheus + Grafana |
 | Orchestration | Docker Compose (full stack) + **Kubernetes** (app tier) |
-| CI/CD | **GitHub Actions** (tests, image builds, kubeconform) |
+| CI/CD | **GitHub Actions** → GHCR (Ruff, Bandit, tests, web build, kubeconform, image publish on main) |
 
 ---
 
@@ -86,16 +86,33 @@ make up                     # build images and start everything
 
 GitHub Actions (`.github/workflows/ci.yml`) on every PR / push:
 
-1. **Unit tests** — `make test` for common, worker, and api  
-2. **Kubernetes validate** — `kubectl kustomize` + [kubeconform](https://github.com/yannh/kubeconform)  
-3. **Docker builds** — ingest + web on every PR; api + worker on `main` (heavier torch/embedding bake)
+1. **Lint (Ruff)** — `ruff check` + `ruff format --check` on `services/`
+2. **Security** — [Bandit](https://bandit.readthedocs.io/) (medium+) + `pip-audit` on service deps
+3. **Unit tests** — `make test` for common, worker, and api
+4. **ES smoke** — live Elasticsearch upsert → BM25 (`make smoke`; GHA ES service)
+5. **Web** — `next lint` + production `next build`
+6. **Kubernetes validate** — `kubectl kustomize` + [kubeconform](https://github.com/yannh/kubeconform)
+7. **Docker builds** — api, worker, ingest, web (Buildx + GHA cache)
+8. **CD (main only)** — push the same images to **GHCR** as  
+   `ghcr.io/shubhamsinha1010/pulsesearch-cdc-rag/{api,worker,ingest,web}:latest` and `:sha-<short>`
+
+Dependabot opens weekly PRs for Actions, pip, and npm.
+
+Local stand-in for the Python quality gates:
+
+```bash
+pip install -r requirements-dev.txt
+make ci          # lint + bandit + test
+make lint        # ruff only
+make bandit      # security scan only
+```
 
 ---
 
 ## Kubernetes (app tier)
 
 Compose stays the one-command demo for MySQL / Redpanda / Debezium / Elasticsearch.  
-The **application services** (ingest, worker, api, web) also have production-shaped Deployments under `deploy/k8s/`.
+The **application services** (ingest, worker, api, web) also have production-shaped Deployments under `deploy/k8s/` — probes, ServiceAccount, and Ingress included.
 
 ```bash
 # Optional local path: Compose for data plane, kind for apps
@@ -103,10 +120,14 @@ docker compose up -d mysql redpanda elasticsearch connect
 make register
 make k8s-build
 make k8s-kind-up
+make k8s-ingress          # ingress-nginx for kind
 make k8s-kind-load
 make k8s-apply
-kubectl -n pulsesearch port-forward svc/api 8000:8000
+# /etc/hosts → 127.0.0.1 pulsesearch.local api.pulsesearch.local
+# then open http://pulsesearch.local  and  http://api.pulsesearch.local/docs
 ```
+
+GHCR overlay (after images publish from `main`): `kubectl apply -k deploy/k8s/overlays/ghcr`
 
 Details: [`deploy/k8s/README.md`](deploy/k8s/README.md). Validate without a cluster: `make k8s-validate`.
 

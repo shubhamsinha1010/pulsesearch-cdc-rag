@@ -41,9 +41,7 @@ class FakeRepository:
     def knn_search(self, vector, size, num_candidates=100, filters=None, min_score=None):
         self.last_knn_min_score = min_score
         self.last_filters = filters
-        return [h for h in self._knn if float(h.get("_score") or 0) >= (min_score or 0)][
-            :size
-        ]
+        return [h for h in self._knn if float(h.get("_score") or 0) >= (min_score or 0)][:size]
 
 
 def test_rrf_rewards_documents_ranked_by_both_retrievers():
@@ -51,9 +49,7 @@ def test_rrf_rewards_documents_ranked_by_both_retrievers():
     # appear strongly in one retriever.
     bm25 = [_hit("A"), _hit("B"), _hit("C")]
     knn = [_hit("D", 0.9), _hit("B", 0.85), _hit("E", 0.8)]
-    service = HybridSearchService(
-        FakeRepository(bm25, knn), FakeEmbeddings(), knn_min_score=0.5
-    )
+    service = HybridSearchService(FakeRepository(bm25, knn), FakeEmbeddings(), knn_min_score=0.5)
 
     hits = service.search("anything", size=3, mode=SearchMode.HYBRID)
 

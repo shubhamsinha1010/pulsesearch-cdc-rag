@@ -1,0 +1,21 @@
+# Point Deployments at images published to GHCR from main.
+# Apply after: kubectl apply -k deploy/k8s/overlays/ghcr
+# (still needs a secret + ConfigMap suitable for your cluster).
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+namespace: pulsesearch
+resources:
+  - ../../base
+images:
+  - name: pulsesearch-api
+    newName: ghcr.io/shubhamsinha1010/pulsesearch-cdc-rag/api
+    newTag: latest
+  - name: pulsesearch-worker
+    newName: ghcr.io/shubhamsinha1010/pulsesearch-cdc-rag/worker
+    newTag: latest
+  - name: pulsesearch-ingest
+    newName: ghcr.io/shubhamsinha1010/pulsesearch-cdc-rag/ingest
+    newTag: latest
+  - name: pulsesearch-web
+    newName: ghcr.io/shubhamsinha1010/pulsesearch-cdc-rag/web
+    newTag: latest

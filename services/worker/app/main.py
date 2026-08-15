@@ -42,7 +42,7 @@ def _ensure_index_with_retry(repo: PageRepository, dims: int, attempts: int = 30
                 extra={"index_created": index_created, "index": repo.index},
             )
             return
-        except Exception as exc:  # noqa: BLE001 - ES may still be booting
+        except Exception as exc:
             log.warning(
                 "waiting for elasticsearch",
                 extra={"attempt": attempt, "error": str(exc)},

@@ -9,8 +9,7 @@ and post-checks the model output for unsupported / refusal answers.
 from __future__ import annotations
 
 import re
-from datetime import datetime, timezone
-from typing import Optional
+from datetime import UTC, datetime
 
 from pulsesearch_common.models import Citation, PageDocument, RAGAnswer
 
@@ -29,11 +28,11 @@ _SYSTEM_PROMPT = (
 )
 
 _REFUSAL_PATTERNS = (
-    re.compile(r"\bi don't know\b", re.I),
-    re.compile(r"\bdo not know\b", re.I),
-    re.compile(r"\bdon't have (any |enough )?indexed\b", re.I),
-    re.compile(r"\bnot (enough|sufficient) (information|context)\b", re.I),
-    re.compile(r"\bcontext (does not|doesn't|provided does not)\b", re.I),
+    re.compile(r"\bi don't know\b", re.IGNORECASE),
+    re.compile(r"\bdo not know\b", re.IGNORECASE),
+    re.compile(r"\bdon't have (any |enough )?indexed\b", re.IGNORECASE),
+    re.compile(r"\bnot (enough|sufficient) (information|context)\b", re.IGNORECASE),
+    re.compile(r"\bcontext (does not|doesn't|provided does not)\b", re.IGNORECASE),
 )
 
 _CITATION_RE = re.compile(r"\[(\d+)\]")
@@ -50,7 +49,7 @@ class RAGService:
         self._llm = llm
         self._top_k = top_k
 
-    def answer(self, question: str, wiki: Optional[str] = None) -> RAGAnswer:
+    def answer(self, question: str, wiki: str | None = None) -> RAGAnswer:
         # Prefer main-article namespace — User/Talk pages create false retrievals.
         hits = self._search.search(
             query=question,
@@ -96,8 +95,7 @@ class RAGService:
         text = (answer_text or "").strip()
         if not text or _looks_like_refusal(text):
             return RAGAnswer(
-                answer=text
-                or "I don't know based on the indexed changes.",
+                answer=text or "I don't know based on the indexed changes.",
                 citations=[],
                 grounded=False,
             )
@@ -141,8 +139,8 @@ def _to_citation(doc: PageDocument) -> Citation:
     )
 
 
-def _freshest(documents: list[PageDocument]) -> Optional[datetime]:
+def _freshest(documents: list[PageDocument]) -> datetime | None:
     times = [d.event_time for d in documents if d.event_time]
     if not times:
         return None
-    return max(times).astimezone(timezone.utc)
+    return max(times).astimezone(UTC)

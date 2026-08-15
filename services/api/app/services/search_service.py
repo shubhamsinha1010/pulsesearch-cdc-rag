@@ -15,15 +15,15 @@ Elasticsearch query DSL.
 from __future__ import annotations
 
 from concurrent.futures import ThreadPoolExecutor
-from enum import Enum
-from typing import Any, Optional
+from enum import StrEnum
+from typing import Any
 
 from pulsesearch_common.embeddings import EmbeddingProvider
 from pulsesearch_common.es_client import PageRepository
 from pulsesearch_common.models import PageDocument, SearchHit
 
 
-class SearchMode(str, Enum):
+class SearchMode(StrEnum):
     HYBRID = "hybrid"
     BM25 = "bm25"
     VECTOR = "vector"
@@ -71,8 +71,8 @@ class HybridSearchService:
         query: str,
         size: int = 10,
         mode: SearchMode = SearchMode.HYBRID,
-        wiki: Optional[str] = None,
-        namespace: Optional[int] = _DEFAULT_NAMESPACE,
+        wiki: str | None = None,
+        namespace: int | None = _DEFAULT_NAMESPACE,
     ) -> list[SearchHit]:
         if not query.strip():
             return []
@@ -96,12 +96,8 @@ class HybridSearchService:
         return self._hybrid(query, size, filters)
 
     # -- hybrid fusion ----------------------------------------------------
-    def _hybrid(
-        self, query: str, size: int, filters: Optional[dict[str, Any]]
-    ) -> list[SearchHit]:
-        bm25_weight, knn_weight = _query_aware_weights(
-            query, self._bm25_weight, self._knn_weight
-        )
+    def _hybrid(self, query: str, size: int, filters: dict[str, Any] | None) -> list[SearchHit]:
+        bm25_weight, knn_weight = _query_aware_weights(query, self._bm25_weight, self._knn_weight)
         bm25_future = self._pool.submit(
             self._repo.bm25_search, query, self._candidate_pool, filters
         )
@@ -117,9 +113,7 @@ class HybridSearchService:
 
         bm25_rank = {h["_id"]: i for i, h in enumerate(bm25_hits)}
         knn_rank = {h["_id"]: i for i, h in enumerate(knn_hits)}
-        sources: dict[str, dict[str, Any]] = {
-            h["_id"]: h for h in (*bm25_hits, *knn_hits)
-        }
+        sources: dict[str, dict[str, Any]] = {h["_id"]: h for h in (*bm25_hits, *knn_hits)}
 
         fused: list[tuple[str, float]] = []
         for doc_id in sources:
@@ -145,9 +139,7 @@ class HybridSearchService:
             )
         return results
 
-    def _as_hits(
-        self, hits: list[dict[str, Any]], size: int, source: str
-    ) -> list[SearchHit]:
+    def _as_hits(self, hits: list[dict[str, Any]], size: int, source: str) -> list[SearchHit]:
         results: list[SearchHit] = []
         for rank, hit in enumerate(hits[:size]):
             results.append(
@@ -162,9 +154,7 @@ class HybridSearchService:
         return results
 
 
-def _search_filters(
-    *, wiki: Optional[str], namespace: Optional[int]
-) -> Optional[dict[str, Any]]:
+def _search_filters(*, wiki: str | None, namespace: int | None) -> dict[str, Any] | None:
     filters: dict[str, Any] = {}
     if wiki is not None:
         filters["wiki"] = wiki
@@ -173,9 +163,7 @@ def _search_filters(
     return filters or None
 
 
-def _query_aware_weights(
-    query: str, bm25_weight: float, knn_weight: float
-) -> tuple[float, float]:
+def _query_aware_weights(query: str, bm25_weight: float, knn_weight: float) -> tuple[float, float]:
     """Shift RRF weights by query shape (weighted RRF practice).
 
     Short / quoted / Title-Case queries lean lexical; longer conceptual
@@ -200,6 +188,6 @@ def _to_document(doc_id: str, source: dict[str, Any]) -> PageDocument:
     return PageDocument(id=doc_id, **{k: v for k, v in source.items() if k != "id"})
 
 
-def _rank_or_none(rank: Optional[int]) -> Optional[int]:
+def _rank_or_none(rank: int | None) -> int | None:
     # Expose 1-based ranks to clients for readability.
     return None if rank is None else rank + 1

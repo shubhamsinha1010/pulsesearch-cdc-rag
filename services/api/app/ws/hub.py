@@ -11,7 +11,7 @@ from __future__ import annotations
 import asyncio
 import json
 import threading
-from typing import Any, Optional
+from typing import Any
 
 from confluent_kafka import Consumer, KafkaError
 from fastapi import WebSocket
@@ -49,7 +49,7 @@ class ConnectionManager:
         for ws in targets:
             try:
                 await ws.send_text(payload)
-            except Exception:  # noqa: BLE001 - client vanished mid-send
+            except Exception:
                 stale.append(ws)
         if stale:
             async with self._lock:
@@ -64,8 +64,8 @@ class LiveHub:
     def __init__(self, settings: KafkaSettings) -> None:
         self._settings = settings
         self.manager = ConnectionManager()
-        self._loop: Optional[asyncio.AbstractEventLoop] = None
-        self._thread: Optional[threading.Thread] = None
+        self._loop: asyncio.AbstractEventLoop | None = None
+        self._thread: threading.Thread | None = None
         self._running = False
 
     def start(self, loop: asyncio.AbstractEventLoop) -> None:
@@ -107,7 +107,7 @@ class LiveHub:
         finally:
             consumer.close()
 
-    def _to_live_event(self, raw: Optional[bytes]) -> Optional[dict[str, Any]]:
+    def _to_live_event(self, raw: bytes | None) -> dict[str, Any] | None:
         if raw is None:
             return None
         try:
@@ -125,7 +125,7 @@ class LiveHub:
                 "edit_count": row.get("edit_count"),
                 "ts_ms": payload.get("ts_ms"),
             }
-        except Exception:  # noqa: BLE001
+        except Exception:
             return None
 
     def _dispatch(self, event: dict[str, Any]) -> None:

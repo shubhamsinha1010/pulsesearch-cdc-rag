@@ -19,7 +19,9 @@ spec:
       annotations:
         prometheus.io/scrape: "true"
         prometheus.io/port: "9100"
+        prometheus.io/path: /metrics
     spec:
+      serviceAccountName: pulsesearch
       containers:
         - name: worker
           image: pulsesearch-worker:local
@@ -32,6 +34,23 @@ spec:
                 name: pulsesearch-config
             - secretRef:
                 name: pulsesearch-secrets
+          # Metrics HTTP server is started after process boot; use it as a probe.
+          livenessProbe:
+            httpGet:
+              path: /metrics
+              port: metrics
+            initialDelaySeconds: 60
+            periodSeconds: 30
+            timeoutSeconds: 5
+            failureThreshold: 3
+          readinessProbe:
+            httpGet:
+              path: /metrics
+              port: metrics
+            initialDelaySeconds: 30
+            periodSeconds: 15
+            timeoutSeconds: 5
+            failureThreshold: 3
           resources:
             requests:
               cpu: 100m

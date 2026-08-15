@@ -45,9 +45,7 @@ def test_empty_retrieval_is_ungrounded():
 
 def test_refusal_answer_is_ungrounded():
     hits = [_hit("1", "Climate change")]
-    service = RAGService(
-        FakeSearch(hits), FakeLLM("I don't know based on the indexed changes.")
-    )
+    service = RAGService(FakeSearch(hits), FakeLLM("I don't know based on the indexed changes."))
     answer = service.answer("Who invented the telephone?")
     assert answer.grounded is False
     assert answer.citations == []
@@ -55,9 +53,7 @@ def test_refusal_answer_is_ungrounded():
 
 def test_answer_without_citations_is_ungrounded():
     hits = [_hit("1", "Climate change")]
-    service = RAGService(
-        FakeSearch(hits), FakeLLM("Climate change is happening worldwide.")
-    )
+    service = RAGService(FakeSearch(hits), FakeLLM("Climate change is happening worldwide."))
     answer = service.answer("What about climate?")
     assert answer.grounded is False
     assert answer.citations == []

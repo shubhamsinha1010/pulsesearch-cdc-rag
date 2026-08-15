@@ -4,7 +4,7 @@ CONNECT_URL ?= http://localhost:8083
 GROUP ?= pulsesearch-sync
 TOPIC ?= pulse.pulsesearch.pages
 
-.PHONY: help up down build logs ps register status replay recreate-index clean test \
+.PHONY: help up down build logs ps register status replay recreate-index clean test smoke \
 	lint lint-fix format-check bandit security audit ci \
 	k8s-validate k8s-build k8s-kind-up k8s-kind-load k8s-ingress k8s-apply k8s-delete
 
@@ -44,9 +44,12 @@ clean: ## Stop and remove volumes (DESTRUCTIVE)
 	$(COMPOSE) down -v
 
 test: ## Run unit tests for each service (isolated to avoid package clashes)
-	cd services/common && python -m pytest -q
+	cd services/common && python -m pytest -q --ignore=tests/test_es_upsert_search_smoke.py
 	cd services/worker && python -m pytest -q
 	cd services/api && python -m pytest -q
+
+smoke: ## ES upsert → BM25 smoke (needs ES_URL; skips if ES is down)
+	cd services/common && python -m pytest -q tests/test_es_upsert_search_smoke.py
 
 lint: ## Ruff lint + format check on services/
 	ruff check services

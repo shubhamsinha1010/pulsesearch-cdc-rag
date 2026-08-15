@@ -89,11 +89,14 @@ GitHub Actions (`.github/workflows/ci.yml`) on every PR / push:
 1. **Lint (Ruff)** — `ruff check` + `ruff format --check` on `services/`
 2. **Security** — [Bandit](https://bandit.readthedocs.io/) (medium+) + `pip-audit` on service deps
 3. **Unit tests** — `make test` for common, worker, and api
-4. **Web** — `next lint` + production `next build`
-5. **Kubernetes validate** — `kubectl kustomize` + [kubeconform](https://github.com/yannh/kubeconform)
-6. **Docker builds** — api, worker, ingest, web (Buildx + GHA cache)
-7. **CD (main only)** — push the same images to **GHCR** as  
+4. **ES smoke** — live Elasticsearch upsert → BM25 (`make smoke`; GHA ES service)
+5. **Web** — `next lint` + production `next build`
+6. **Kubernetes validate** — `kubectl kustomize` + [kubeconform](https://github.com/yannh/kubeconform)
+7. **Docker builds** — api, worker, ingest, web (Buildx + GHA cache)
+8. **CD (main only)** — push the same images to **GHCR** as  
    `ghcr.io/shubhamsinha1010/pulsesearch-cdc-rag/{api,worker,ingest,web}:latest` and `:sha-<short>`
+
+Dependabot opens weekly PRs for Actions, pip, and npm.
 
 Local stand-in for the Python quality gates:
 

@@ -64,7 +64,8 @@ flowchart LR
 | Backend | FastAPI + a dedicated Kafka consumer worker |
 | Frontend | Next.js 14 + TypeScript |
 | Observability | Prometheus + Grafana |
-| Orchestration | Docker Compose |
+| Orchestration | Docker Compose (full stack) + **Kubernetes** (app tier) |
+| CI/CD | **GitHub Actions** (tests, image builds, kubeconform) |
 
 ---
 
@@ -78,6 +79,36 @@ make up                     # build images and start everything
 ```
 
 > RAG uses **Groq** (hosted, free tier) — no local GPU or model download needed. Just set `GROQ_API_KEY` in `.env`.
+
+---
+
+## CI/CD
+
+GitHub Actions (`.github/workflows/ci.yml`) on every PR / push:
+
+1. **Unit tests** — `make test` for common, worker, and api  
+2. **Kubernetes validate** — `kubectl kustomize` + [kubeconform](https://github.com/yannh/kubeconform)  
+3. **Docker builds** — ingest + web on every PR; api + worker on `main` (heavier torch/embedding bake)
+
+---
+
+## Kubernetes (app tier)
+
+Compose stays the one-command demo for MySQL / Redpanda / Debezium / Elasticsearch.  
+The **application services** (ingest, worker, api, web) also have production-shaped Deployments under `deploy/k8s/`.
+
+```bash
+# Optional local path: Compose for data plane, kind for apps
+docker compose up -d mysql redpanda elasticsearch connect
+make register
+make k8s-build
+make k8s-kind-up
+make k8s-kind-load
+make k8s-apply
+kubectl -n pulsesearch port-forward svc/api 8000:8000
+```
+
+Details: [`deploy/k8s/README.md`](deploy/k8s/README.md). Validate without a cluster: `make k8s-validate`.
 
 The first build downloads models and images and can take several minutes. Then open:
 

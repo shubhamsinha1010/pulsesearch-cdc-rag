@@ -1,0 +1,125 @@
+name: CI
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    name: Unit tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+
+      - name: Install common + test deps
+        run: |
+          python -m pip install -U pip
+          pip install "./services/common"
+          pip install -r services/api/requirements.txt
+          pip install -r services/worker/requirements.txt
+          pip install pytest
+
+      - name: Run unit tests
+        run: make test
+        env:
+          # Keep HF/transformers from trying interactive downloads in CI when mocked.
+          TRANSFORMERS_OFFLINE: "0"
+          HF_HUB_DISABLE_PROGRESS_BARS: "1"
+
+  k8s-validate:
+    name: Validate Kubernetes manifests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install kubectl + kubeconform
+        run: |
+          curl -sSL -o /tmp/kubectl \
+            "https://dl.k8s.io/release/$(curl -sSL https://dl.k8s.io/release/stable.txt)/bin/linux/amd64/kubectl"
+          chmod +x /tmp/kubectl
+          sudo mv /tmp/kubectl /usr/local/bin/kubectl
+          curl -sSL -o /tmp/kubeconform.tgz \
+            https://github.com/yannh/kubeconform/releases/download/v0.6.7/kubeconform-linux-amd64.tar.gz
+          tar -xzf /tmp/kubeconform.tgz -C /tmp
+          sudo mv /tmp/kubeconform /usr/local/bin/
+          kubectl version --client
+          kubeconform -v
+
+      - name: Render and validate kustomize overlays
+        run: |
+          kubectl kustomize deploy/k8s/base > /tmp/base.yaml
+          kubectl kustomize deploy/k8s/overlays/local-kind > /tmp/local-kind.yaml
+          kubeconform -summary -ignore-missing-schemas /tmp/base.yaml
+          kubeconform -summary -ignore-missing-schemas /tmp/local-kind.yaml
+
+  docker:
+    name: Build Docker images
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: ingest
+            dockerfile: services/ingest/Dockerfile
+            context: .
+            tag: pulsesearch-ingest:ci
+          - name: web
+            dockerfile: web/Dockerfile
+            context: web
+            tag: pulsesearch-web:ci
+          # api/worker bake torch + MiniLM — heavy; build on main only to keep PRs fast
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build ${{ matrix.name }}
+        uses: docker/build-push-action@v6
+        with:
+          context: ${{ matrix.context }}
+          file: ${{ matrix.dockerfile }}
+          push: false
+          tags: ${{ matrix.tag }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+  docker-heavy:
+    name: Build API + worker images
+    if: github.event_name == 'push' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master')
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: api
+            dockerfile: services/api/Dockerfile
+            tag: pulsesearch-api:ci
+          - name: worker
+            dockerfile: services/worker/Dockerfile
+            tag: pulsesearch-worker:ci
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build ${{ matrix.name }}
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: ${{ matrix.dockerfile }}
+          push: false
+          tags: ${{ matrix.tag }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max

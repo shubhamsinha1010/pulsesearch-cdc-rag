@@ -4,9 +4,8 @@ from __future__ import annotations
 
 import pytest
 
-from pulsesearch_common.config import LLMSettings
-
 from app.services.llm import EchoLLMClient, FallbackLLMClient, GroqClient
+from pulsesearch_common.config import LLMSettings
 
 
 def test_groq_requires_api_key_to_generate():

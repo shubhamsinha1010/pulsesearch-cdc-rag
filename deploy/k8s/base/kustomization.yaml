@@ -3,8 +3,10 @@ kind: Kustomization
 namespace: pulsesearch
 resources:
   - namespace.yaml
+  - serviceaccount.yaml
   - configmap.yaml
   - api.yaml
   - worker.yaml
   - ingest.yaml
   - web.yaml
+  - ingress.yaml

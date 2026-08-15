@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-from typing import Optional
-
 from fastapi import APIRouter, Depends
 from pydantic import BaseModel, Field
 
@@ -18,7 +16,7 @@ router = APIRouter(prefix="/rag", tags=["rag"])
 
 class RAGRequest(BaseModel):
     question: str = Field(..., min_length=3)
-    wiki: Optional[str] = None
+    wiki: str | None = None
 
 
 @router.post("", response_model=RAGAnswer)

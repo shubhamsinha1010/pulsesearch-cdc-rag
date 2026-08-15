@@ -57,5 +57,5 @@ class EnrichmentPipeline:
         started = time.perf_counter()
         vectors = self._embeddings.embed_batch(texts)
         EMBEDDING_LATENCY.observe(time.perf_counter() - started)
-        for document, vector in zip(documents, vectors):
+        for document, vector in zip(documents, vectors, strict=True):
             document.embedding = vector

@@ -7,13 +7,13 @@ so semantic quality improves without inflating sync latency.
 
 from __future__ import annotations
 
+import contextlib
 import logging
 import queue
 import threading
 import time
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
-from typing import Optional
 
 from pulsesearch_common.embeddings import EmbeddingProvider
 from pulsesearch_common.es_client import PageRepository
@@ -53,7 +53,7 @@ class SummaryEnricher:
         self._embeddings = embeddings
         self._summaries = summaries or NullSummaryClient()
         self._enabled = enabled
-        self._queue: queue.Queue[Optional[_Job]] = queue.Queue(maxsize=queue_size)
+        self._queue: queue.Queue[_Job | None] = queue.Queue(maxsize=queue_size)
         self._fetch_pool = ThreadPoolExecutor(
             max_workers=max(1, fetch_concurrency), thread_name_prefix="wiki-sum"
         )
@@ -102,10 +102,8 @@ class SummaryEnricher:
             return
         self._stopped.set()
         for _ in self._threads:
-            try:
+            with contextlib.suppress(queue.Full):
                 self._queue.put_nowait(None)
-            except queue.Full:
-                pass
         deadline = time.time() + timeout
         for thread in self._threads:
             remaining = max(0.0, deadline - time.time())
@@ -122,7 +120,7 @@ class SummaryEnricher:
                 return
             try:
                 self._enrich(job)
-            except Exception as exc:  # noqa: BLE001 - never kill the worker
+            except Exception as exc:
                 log.warning(
                     "summary enrichment failed",
                     extra={"doc_id": job.doc_id, "error": str(exc)},

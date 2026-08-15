@@ -20,11 +20,9 @@ class EmbeddingProvider(Protocol):
     def dimensions(self) -> int:  # pragma: no cover - trivial
         ...
 
-    def embed(self, text: str) -> list[float]:
-        ...
+    def embed(self, text: str) -> list[float]: ...
 
-    def embed_batch(self, texts: list[str]) -> list[list[float]]:
-        ...
+    def embed_batch(self, texts: list[str]) -> list[list[float]]: ...
 
 
 class SentenceTransformerEmbeddings:
@@ -85,7 +83,8 @@ class HashingEmbeddings:
 
         vector = [0.0] * self._dimensions
         for token in text.lower().split():
-            digest = hashlib.md5(token.encode("utf-8")).digest()
+            # Deterministic bag-of-tokens features only — not used for security.
+            digest = hashlib.md5(token.encode("utf-8"), usedforsecurity=False).digest()
             idx = int.from_bytes(digest[:4], "little") % self._dimensions
             vector[idx] += 1.0
         norm = math.sqrt(sum(v * v for v in vector)) or 1.0

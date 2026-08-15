@@ -10,8 +10,8 @@ from __future__ import annotations
 
 import time
 from collections import OrderedDict
-from datetime import datetime, timezone
-from typing import Iterator, Optional
+from collections.abc import Iterator
+from datetime import UTC, datetime
 
 import httpx
 
@@ -23,7 +23,7 @@ _API_URL = "https://api.github.com/events"
 class GitHubSource:
     name = "github"
 
-    def __init__(self, poll_interval: float = 60.0, token: Optional[str] = None) -> None:
+    def __init__(self, poll_interval: float = 60.0, token: str | None = None) -> None:
         self._poll_interval = poll_interval
         self._headers = {
             "Accept": "application/vnd.github+json",
@@ -54,7 +54,7 @@ class GitHubSource:
                     seen.popitem(last=False)
                 time.sleep(self._poll_interval)
 
-    def _parse(self, event: dict) -> Optional[PageRecord]:
+    def _parse(self, event: dict) -> PageRecord | None:
         repo = (event.get("repo") or {}).get("name")
         if not repo:
             return None
@@ -70,10 +70,10 @@ class GitHubSource:
         )
 
 
-def _parse_time(value: Optional[str]) -> datetime:
+def _parse_time(value: str | None) -> datetime:
     if value:
         try:
             return datetime.fromisoformat(value.replace("Z", "+00:00"))
         except ValueError:
             pass
-    return datetime.now(timezone.utc)
+    return datetime.now(UTC)

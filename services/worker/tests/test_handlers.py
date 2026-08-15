@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import pytest
+
 from app.handlers import DebeziumEventParser, Operation
 
 
@@ -59,8 +61,5 @@ def test_tinyint_booleans_are_coerced():
 
 def test_unknown_operation_is_rejected():
     parser = DebeziumEventParser()
-    try:
+    with pytest.raises(ValueError, match="unsupported Debezium op"):
         parser.parse(_envelope("x", after=_row()))
-        assert False, "expected ValueError"
-    except ValueError as exc:
-        assert "unsupported Debezium op" in str(exc)

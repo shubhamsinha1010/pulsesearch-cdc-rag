@@ -16,7 +16,6 @@ from __future__ import annotations
 
 import json
 import time
-from typing import Optional
 
 from confluent_kafka import Consumer, KafkaError, KafkaException, Message
 
@@ -119,7 +118,7 @@ class SyncConsumer:
             envelope = json.loads(raw)
             payload = _unwrap(envelope)
             return self._parser.parse(payload)
-        except Exception as exc:  # noqa: BLE001 - poison message
+        except Exception as exc:
             SYNC_FAILURES.labels(stage="parse").inc()
             self._dlq.publish(raw, error=f"parse: {exc}", key=msg.key())
             self._dlq.flush()
@@ -134,7 +133,7 @@ class SyncConsumer:
             try:
                 self._sink.write(result)
                 return True
-            except Exception as exc:  # noqa: BLE001
+            except Exception as exc:
                 attempt += 1
                 SYNC_FAILURES.labels(stage="write").inc()
                 if attempt >= self._max_write_retries:
@@ -146,9 +145,7 @@ class SyncConsumer:
                     # commit — avoiding permanent index holes from brief outages.
                     for msg in batch:
                         if msg.value() is not None:
-                            self._dlq.publish(
-                                msg.value(), error=f"write: {exc}", key=msg.key()
-                            )
+                            self._dlq.publish(msg.value(), error=f"write: {exc}", key=msg.key())
                     self._dlq.flush()
                     return False
                 backoff = min(2**attempt * 0.5, 15.0)
@@ -166,7 +163,7 @@ class SyncConsumer:
             log.info("consumer closed")
 
 
-def _unwrap(envelope: dict) -> Optional[dict]:
+def _unwrap(envelope: dict) -> dict | None:
     """Support both schema-wrapped and bare Debezium JSON payloads."""
 
     if envelope is None:

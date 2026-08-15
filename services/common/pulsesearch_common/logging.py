@@ -10,8 +10,8 @@ from __future__ import annotations
 import json
 import logging
 import sys
-from datetime import datetime, timezone
-from typing import Any
+from datetime import UTC, datetime
+from typing import Any, ClassVar
 
 from .config import observability_settings
 
@@ -19,11 +19,13 @@ from .config import observability_settings
 class _JsonFormatter(logging.Formatter):
     """Render log records as single-line JSON objects."""
 
-    _RESERVED = set(logging.LogRecord("", 0, "", 0, "", (), None).__dict__.keys())
+    _RESERVED: ClassVar[set[str]] = set(
+        logging.LogRecord("", 0, "", 0, "", (), None).__dict__.keys()
+    )
 
     def format(self, record: logging.LogRecord) -> str:
         payload: dict[str, Any] = {
-            "ts": datetime.now(timezone.utc).isoformat(),
+            "ts": datetime.now(UTC).isoformat(),
             "level": record.levelname,
             "logger": record.name,
             "message": record.getMessage(),
@@ -45,9 +47,7 @@ def configure_logging(service_name: str) -> logging.Logger:
     if settings.log_json:
         handler.setFormatter(_JsonFormatter())
     else:
-        handler.setFormatter(
-            logging.Formatter("%(asctime)s %(levelname)s %(name)s :: %(message)s")
-        )
+        handler.setFormatter(logging.Formatter("%(asctime)s %(levelname)s %(name)s :: %(message)s"))
 
     root = logging.getLogger()
     root.handlers.clear()

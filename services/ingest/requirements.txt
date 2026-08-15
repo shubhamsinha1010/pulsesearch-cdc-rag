@@ -1,6 +1,6 @@
 httpx>=0.27,<0.28
 httpx-sse>=0.4
-SQLAlchemy>=2.0,<2.1
+SQLAlchemy>=2.0.52,<2.1
 PyMySQL>=1.1
 pydantic>=2.6
 pydantic-settings>=2.2

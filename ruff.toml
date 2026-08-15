@@ -1,0 +1,23 @@
+line-length = 100
+target-version = "py311"
+
+[lint]
+select = [
+  "E",
+  "F",
+  "I",
+  "B",
+  "UP",
+  "SIM",
+  "RUF",
+]
+ignore = [
+  # FastAPI idiom: Depends(...) / Query(...) in signature defaults
+  "B008",
+]
+
+[lint.per-file-ignores]
+"**/tests/**" = ["S101"]
+
+[lint.isort]
+known-first-party = ["pulsesearch_common", "app"]

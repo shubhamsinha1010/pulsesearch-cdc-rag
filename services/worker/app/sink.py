@@ -9,7 +9,6 @@ from __future__ import annotations
 
 import json
 import time
-from typing import Optional
 
 from confluent_kafka import Producer
 
@@ -46,6 +45,7 @@ class ElasticsearchSink:
             live = [d for d in result.upserts if not d.deleted]
             self._enricher.submit(live)
         return written
+
     @staticmethod
     def _record_latency(result: PipelineResult) -> None:
         now_ms = time.time() * 1000
@@ -57,13 +57,11 @@ class ElasticsearchSink:
 class DeadLetterQueue:
     """Publishes unprocessable messages to a Kafka DLQ topic."""
 
-    def __init__(self, settings: KafkaSettings, producer: Optional[Producer] = None) -> None:
+    def __init__(self, settings: KafkaSettings, producer: Producer | None = None) -> None:
         self._topic = settings.dlq_topic
-        self._producer = producer or Producer(
-            {"bootstrap.servers": settings.bootstrap_servers}
-        )
+        self._producer = producer or Producer({"bootstrap.servers": settings.bootstrap_servers})
 
-    def publish(self, raw_value: bytes, error: str, key: Optional[bytes] = None) -> None:
+    def publish(self, raw_value: bytes, error: str, key: bytes | None = None) -> None:
         envelope = {
             "error": error,
             "payload": _safe_decode(raw_value),
@@ -83,5 +81,5 @@ class DeadLetterQueue:
 def _safe_decode(raw: bytes) -> object:
     try:
         return json.loads(raw.decode("utf-8"))
-    except Exception:  # noqa: BLE001
+    except Exception:
         return {"_raw": raw.decode("utf-8", errors="replace")}

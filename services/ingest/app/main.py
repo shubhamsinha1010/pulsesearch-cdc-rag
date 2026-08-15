@@ -11,7 +11,6 @@ from __future__ import annotations
 import signal
 import time
 from types import FrameType
-from typing import Optional
 
 from pulsesearch_common.config import (
     ingest_settings,
@@ -30,7 +29,9 @@ log = configure_logging("ingest")
 class BatchBuffer:
     """Accumulates records and flushes on size or elapsed-time thresholds."""
 
-    def __init__(self, repo: PageWriteRepository, source_name: str, batch_size: int, flush_interval: float) -> None:
+    def __init__(
+        self, repo: PageWriteRepository, source_name: str, batch_size: int, flush_interval: float
+    ) -> None:
         self._repo = repo
         self._source_name = source_name
         self._batch_size = batch_size
@@ -61,7 +62,7 @@ class BatchBuffer:
                 self._buffer.clear()
                 self._last_flush = time.monotonic()
                 return
-            except Exception:  # noqa: BLE001 - retry; never drop SoR events
+            except Exception:
                 attempt += 1
                 log.exception(
                     "failed to flush batch; retrying",
@@ -100,7 +101,7 @@ class IngestRunner:
                         break
                     self._buffer.add(record)
                     backoff = 1.0  # healthy stream resets backoff
-            except Exception:  # noqa: BLE001 - reconnect with capped backoff
+            except Exception:
                 log.exception("stream error; reconnecting", extra={"backoff": backoff})
                 time.sleep(backoff)
                 backoff = min(backoff * 2, 30.0)
@@ -110,7 +111,7 @@ class IngestRunner:
 
 
 def _install_signal_handlers(runner: IngestRunner) -> None:
-    def handler(signum: int, _frame: Optional[FrameType]) -> None:
+    def handler(signum: int, _frame: FrameType | None) -> None:
         runner.stop()
 
     signal.signal(signal.SIGTERM, handler)

@@ -9,7 +9,7 @@ from __future__ import annotations
 import logging
 import urllib.parse
 from collections import OrderedDict
-from typing import Optional, Protocol
+from typing import Protocol
 
 import httpx
 
@@ -22,8 +22,7 @@ _USER_AGENT = (
 
 
 class SummaryProvider(Protocol):
-    def fetch(self, wiki: str, title: str) -> Optional[str]:
-        ...
+    def fetch(self, wiki: str, title: str) -> str | None: ...
 
 
 class WikipediaSummaryClient:
@@ -31,14 +30,14 @@ class WikipediaSummaryClient:
 
     def __init__(self, cache_size: int = 2048, timeout: float = 2.5) -> None:
         self._cache_size = cache_size
-        self._cache: OrderedDict[str, Optional[str]] = OrderedDict()
+        self._cache: OrderedDict[str, str | None] = OrderedDict()
         self._client = httpx.Client(
             timeout=timeout,
             headers={"User-Agent": _USER_AGENT, "Accept": "application/json"},
             follow_redirects=True,
         )
 
-    def fetch(self, wiki: str, title: str) -> Optional[str]:
+    def fetch(self, wiki: str, title: str) -> str | None:
         key = f"{wiki}:{title}"
         if key in self._cache:
             self._cache.move_to_end(key)
@@ -50,7 +49,7 @@ class WikipediaSummaryClient:
             self._cache.popitem(last=False)
         return summary
 
-    def _fetch_uncached(self, wiki: str, title: str) -> Optional[str]:
+    def _fetch_uncached(self, wiki: str, title: str) -> str | None:
         lang = _wiki_to_lang(wiki)
         if not lang or not title:
             return None
@@ -71,17 +70,17 @@ class WikipediaSummaryClient:
             else:
                 extract = (data.get("extract") or data.get("description") or "").strip()
             return extract[:1000] or None
-        except Exception as exc:  # noqa: BLE001 - enrichment must not break CDC
+        except Exception as exc:
             log.debug("summary fetch failed", extra={"title": title, "error": str(exc)})
             return None
 
 
 class NullSummaryClient:
-    def fetch(self, wiki: str, title: str) -> Optional[str]:
+    def fetch(self, wiki: str, title: str) -> str | None:
         return None
 
 
-def _wiki_to_lang(wiki: str) -> Optional[str]:
+def _wiki_to_lang(wiki: str) -> str | None:
     # enwiki -> en, dewiki -> de; ignore non-wikipedia projects.
     if not wiki.endswith("wiki"):
         return None

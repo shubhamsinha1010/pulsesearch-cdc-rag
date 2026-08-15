@@ -8,14 +8,14 @@ pipeline works purely with :class:`ChangeEvent` / :class:`PageDocument`
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import datetime, timezone
-from enum import Enum
-from typing import Any, Optional
+from datetime import UTC, datetime
+from enum import StrEnum
+from typing import Any
 
 from pulsesearch_common.models import PageDocument
 
 
-class Operation(str, Enum):
+class Operation(StrEnum):
     CREATE = "c"
     UPDATE = "u"
     DELETE = "d"
@@ -37,17 +37,17 @@ class ChangeEvent:
     doc_id: str
     op: Operation
     source_ts_ms: int
-    document: Optional[PageDocument]
+    document: PageDocument | None
 
     @property
     def source_time(self) -> datetime:
-        return datetime.fromtimestamp(self.source_ts_ms / 1000, tz=timezone.utc)
+        return datetime.fromtimestamp(self.source_ts_ms / 1000, tz=UTC)
 
 
 class DebeziumEventParser:
     """Parses a Debezium ``payload`` envelope into a :class:`ChangeEvent`."""
 
-    def parse(self, payload: dict[str, Any]) -> Optional[ChangeEvent]:
+    def parse(self, payload: dict[str, Any]) -> ChangeEvent | None:
         if payload is None:
             return None
 
@@ -103,7 +103,7 @@ def _as_bool(value: Any) -> bool:
     return False
 
 
-def _debezium_datetime(value: Any) -> Optional[datetime]:
+def _debezium_datetime(value: Any) -> datetime | None:
     """Debezium emits MySQL DATETIME as epoch microseconds by default."""
 
     if value is None:
@@ -116,8 +116,8 @@ def _debezium_datetime(value: Any) -> Optional[datetime]:
     if isinstance(value, (int, float)):
         # Heuristic: distinguish micro/milli/second precision by magnitude.
         if value > 1e14:  # microseconds
-            return datetime.fromtimestamp(value / 1_000_000, tz=timezone.utc)
+            return datetime.fromtimestamp(value / 1_000_000, tz=UTC)
         if value > 1e11:  # milliseconds
-            return datetime.fromtimestamp(value / 1_000, tz=timezone.utc)
-        return datetime.fromtimestamp(value, tz=timezone.utc)
+            return datetime.fromtimestamp(value / 1_000, tz=UTC)
+        return datetime.fromtimestamp(value, tz=UTC)
     return None

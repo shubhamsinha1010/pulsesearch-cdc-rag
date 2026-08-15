@@ -8,7 +8,7 @@ defined exactly once.
 
 from __future__ import annotations
 
-from typing import Any, Optional
+from typing import Any
 
 from elasticsearch import Elasticsearch, NotFoundError
 from elasticsearch.helpers import BulkIndexError, bulk
@@ -17,7 +17,7 @@ from .config import ElasticsearchSettings, es_settings
 from .models import PageDocument, utcnow
 
 
-def build_client(settings: Optional[ElasticsearchSettings] = None) -> Elasticsearch:
+def build_client(settings: ElasticsearchSettings | None = None) -> Elasticsearch:
     settings = settings or es_settings()
     return Elasticsearch(
         settings.url,
@@ -84,8 +84,8 @@ class PageRepository:
 
     def __init__(
         self,
-        client: Optional[Elasticsearch] = None,
-        settings: Optional[ElasticsearchSettings] = None,
+        client: Elasticsearch | None = None,
+        settings: ElasticsearchSettings | None = None,
     ) -> None:
         self._settings = settings or es_settings()
         self._client = client or build_client(self._settings)
@@ -164,11 +164,7 @@ class PageRepository:
             return success
         except BulkIndexError as exc:
             # Version conflicts are expected under replay and are not failures.
-            real_errors = [
-                e
-                for e in exc.errors
-                if e.get("index", {}).get("status") != 409
-            ]
+            real_errors = [e for e in exc.errors if e.get("index", {}).get("status") != 409]
             if real_errors:
                 raise
             return len(actions) - len(real_errors)
@@ -193,7 +189,7 @@ class PageRepository:
 
     # -- reads ------------------------------------------------------------
     def bm25_search(
-        self, query: str, size: int, filters: Optional[dict[str, Any]] = None
+        self, query: str, size: int, filters: dict[str, Any] | None = None
     ) -> list[dict[str, Any]]:
         body: dict[str, Any] = {
             "size": size,
@@ -214,8 +210,8 @@ class PageRepository:
         vector: list[float],
         size: int,
         num_candidates: int = 100,
-        filters: Optional[dict[str, Any]] = None,
-        min_score: Optional[float] = None,
+        filters: dict[str, Any] | None = None,
+        min_score: float | None = None,
     ) -> list[dict[str, Any]]:
         # Over-fetch slightly when a score floor is applied so we still fill ``size``.
         fetch_size = size if min_score is None else max(size * 3, size)
@@ -237,7 +233,7 @@ class PageRepository:
             hits = [h for h in hits if float(h.get("_score") or 0.0) >= min_score]
         return hits[:size]
 
-    def get(self, doc_id: str) -> Optional[dict[str, Any]]:
+    def get(self, doc_id: str) -> dict[str, Any] | None:
         try:
             resp = self._client.get(index=self.index, id=doc_id)
         except NotFoundError:
@@ -289,7 +285,7 @@ def _bm25_should_clauses(query: str) -> list[dict[str, Any]]:
     ]
 
 
-def _build_filters(filters: Optional[dict[str, Any]] | None = None) -> list[dict[str, Any]]:
+def _build_filters(filters: dict[str, Any] | None = None) -> list[dict[str, Any]]:
     clauses = _live_doc_filters()
     if not filters:
         return clauses

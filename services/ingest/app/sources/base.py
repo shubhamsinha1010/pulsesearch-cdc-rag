@@ -7,7 +7,8 @@ implementing :class:`FirehoseSource` without touching the ingest loop (OCP).
 
 from __future__ import annotations
 
-from typing import Iterator, Protocol, runtime_checkable
+from collections.abc import Iterator
+from typing import Protocol, runtime_checkable
 
 from pulsesearch_common.models import PageRecord
 

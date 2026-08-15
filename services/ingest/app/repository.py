@@ -10,7 +10,7 @@ what generates a realistic mix of Debezium change events for the CDC pipeline.
 
 from __future__ import annotations
 
-from typing import Iterable
+from collections.abc import Iterable
 
 from sqlalchemy import create_engine, text
 from sqlalchemy.engine import Engine

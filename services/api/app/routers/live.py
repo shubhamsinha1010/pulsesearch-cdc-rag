@@ -20,5 +20,5 @@ async def live_stream(websocket: WebSocket, hub: LiveHub = Depends(get_live_hub)
             await websocket.receive_text()
     except WebSocketDisconnect:
         await hub.manager.disconnect(websocket)
-    except Exception:  # noqa: BLE001
+    except Exception:
         await hub.manager.disconnect(websocket)

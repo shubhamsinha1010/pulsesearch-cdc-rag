@@ -220,7 +220,7 @@ jobs:
             type=raw,value=latest,enable=${{ env.PUBLISH == 'true' }}
             type=raw,value=ci,enable=${{ env.PUBLISH != 'true' }}
       - name: Build ${{ matrix.name }}
-        uses: docker/build-push-action@v6
+        uses: docker/build-push-action@v7
         with:
           context: ${{ matrix.context }}
           file: ${{ matrix.dockerfile }}

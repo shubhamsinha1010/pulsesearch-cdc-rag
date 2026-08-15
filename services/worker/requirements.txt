@@ -1,4 +1,4 @@
-confluent-kafka>=2.4,<2.5
+confluent-kafka>=2.15.0,<2.16
 sentence-transformers>=2.7
 elasticsearch>=8.13,<9
 pydantic>=2.6

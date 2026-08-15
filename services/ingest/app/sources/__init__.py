@@ -6,7 +6,7 @@ adding a source a one-line registry change (Factory + Registry).
 
 from __future__ import annotations
 
-from typing import Callable
+from collections.abc import Callable
 
 from pulsesearch_common.config import IngestSettings
 
@@ -35,8 +35,7 @@ def create_source(settings: IngestSettings) -> FirehoseSource:
         factory = _REGISTRY[settings.source.lower()]
     except KeyError as exc:
         raise ValueError(
-            f"Unknown ingest source '{settings.source}'. "
-            f"Available: {', '.join(sorted(_REGISTRY))}"
+            f"Unknown ingest source '{settings.source}'. Available: {', '.join(sorted(_REGISTRY))}"
         ) from exc
     return factory(settings)
 

@@ -76,12 +76,8 @@ def test_cached_embeddings_reuse_vectors():
 
 
 def test_build_filters_skips_none_values():
-    assert _build_filters(None) == [
-        {"bool": {"must_not": {"term": {"deleted": True}}}}
-    ]
-    assert _build_filters({"wiki": None}) == [
-        {"bool": {"must_not": {"term": {"deleted": True}}}}
-    ]
+    assert _build_filters(None) == [{"bool": {"must_not": {"term": {"deleted": True}}}}]
+    assert _build_filters({"wiki": None}) == [{"bool": {"must_not": {"term": {"deleted": True}}}}]
     assert _build_filters({"wiki": "enwiki"}) == [
         {"bool": {"must_not": {"term": {"deleted": True}}}},
         {"term": {"wiki": "enwiki"}},

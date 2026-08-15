@@ -6,14 +6,14 @@ import re
 
 # Wikipedia edit summaries are often template/MOS noise that hurts embeddings.
 _BOILERPLATE_PATTERNS = (
-    re.compile(r"use american english", re.I),
-    re.compile(r"use british english", re.I),
-    re.compile(r"\[\[mos:", re.I),
-    re.compile(r"added .+ template", re.I),
-    re.compile(r"categor(y|ies) added", re.I),
+    re.compile(r"use american english", re.IGNORECASE),
+    re.compile(r"use british english", re.IGNORECASE),
+    re.compile(r"\[\[mos:", re.IGNORECASE),
+    re.compile(r"added .+ template", re.IGNORECASE),
+    re.compile(r"categor(y|ies) added", re.IGNORECASE),
     re.compile(r"^/\*.*\*/\s*$"),
-    re.compile(r"^revert(ed|ing)?\b", re.I),
-    re.compile(r"^undid revision\b", re.I),
+    re.compile(r"^revert(ed|ing)?\b", re.IGNORECASE),
+    re.compile(r"^undid revision\b", re.IGNORECASE),
 )
 
 _WS_RE = re.compile(r"\s+")

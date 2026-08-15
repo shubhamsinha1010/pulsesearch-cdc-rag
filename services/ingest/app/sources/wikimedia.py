@@ -8,8 +8,8 @@ great demonstration of a real change stream.
 from __future__ import annotations
 
 import json
-from datetime import datetime, timezone
-from typing import Iterator, Optional
+from collections.abc import Iterator
+from datetime import UTC, datetime
 
 import httpx
 from httpx_sse import connect_sse
@@ -22,7 +22,7 @@ _RELEVANT_TYPES = {"edit", "new", "categorize", "log"}
 class WikimediaSource:
     name = "wikimedia"
 
-    def __init__(self, stream_url: str, wikis: Optional[set[str]] = None) -> None:
+    def __init__(self, stream_url: str, wikis: set[str] | None = None) -> None:
         self._stream_url = stream_url
         # Empty set == accept every wiki.
         self._wikis = wikis or set()
@@ -30,14 +30,16 @@ class WikimediaSource:
     def stream(self) -> Iterator[PageRecord]:
         # ``read`` timeout is None because SSE is a long-lived connection.
         timeout = httpx.Timeout(connect=10.0, read=None, write=10.0, pool=10.0)
-        with httpx.Client(timeout=timeout, headers={"User-Agent": "PulseSearch/0.1"}) as client:
-            with connect_sse(client, "GET", self._stream_url) as event_source:
-                for sse in event_source.iter_sse():
-                    record = self._parse(sse.data)
-                    if record is not None:
-                        yield record
+        with (
+            httpx.Client(timeout=timeout, headers={"User-Agent": "PulseSearch/0.1"}) as client,
+            connect_sse(client, "GET", self._stream_url) as event_source,
+        ):
+            for sse in event_source.iter_sse():
+                record = self._parse(sse.data)
+                if record is not None:
+                    yield record
 
-    def _parse(self, raw: str) -> Optional[PageRecord]:
+    def _parse(self, raw: str) -> PageRecord | None:
         if not raw:
             return None
         try:
@@ -75,11 +77,11 @@ class WikimediaSource:
 def _parse_time(event: dict) -> datetime:
     ts = event.get("timestamp")
     if isinstance(ts, (int, float)):
-        return datetime.fromtimestamp(ts, tz=timezone.utc)
+        return datetime.fromtimestamp(ts, tz=UTC)
     dt = (event.get("meta") or {}).get("dt")
     if isinstance(dt, str):
         try:
             return datetime.fromisoformat(dt.replace("Z", "+00:00"))
         except ValueError:
             pass
-    return datetime.now(timezone.utc)
+    return datetime.now(UTC)

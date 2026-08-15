@@ -3,5 +3,5 @@ httpx-sse>=0.4
 SQLAlchemy>=2.0,<2.1
 PyMySQL>=1.1
 pydantic>=2.6
-pydantic-settings>=2.2
+pydantic-settings>=2.15.0
 prometheus-client>=0.20

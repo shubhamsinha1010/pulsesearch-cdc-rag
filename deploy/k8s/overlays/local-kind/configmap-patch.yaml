@@ -1,0 +1,26 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: pulsesearch-config
+  namespace: pulsesearch
+data:
+  # Kind / Docker Desktop: app pods reach Compose infra published on the host.
+  MYSQL_HOST: host.docker.internal
+  MYSQL_DATABASE: pulsesearch
+  MYSQL_USER: pulse
+  KAFKA_BOOTSTRAP_SERVERS: host.docker.internal:19092
+  KAFKA_SOURCE_TOPIC: pulse.pulsesearch.pages
+  KAFKA_GROUP_ID: pulsesearch-sync
+  ES_URL: http://host.docker.internal:9200
+  ES_INDEX: pages
+  EMBEDDING_MODEL: sentence-transformers/all-MiniLM-L6-v2
+  EMBEDDING_DIMENSIONS: "384"
+  INGEST_SOURCE: wikimedia
+  INGEST_WIKIS: enwiki
+  SUMMARY_ENRICHMENT: "true"
+  SUMMARY_ENRICHMENT_WORKERS: "2"
+  SUMMARY_FETCH_CONCURRENCY: "8"
+  GROQ_MODEL: llama-3.1-8b-instant
+  LOG_LEVEL: INFO
+  LOG_JSON: "true"
+  METRICS_PORT: "9100"

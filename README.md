@@ -86,25 +86,31 @@ make up                     # build images and start everything
 
 GitHub Actions (`.github/workflows/ci.yml`) on every PR / push:
 
-1. **Lint (Ruff)** — `ruff check` + `ruff format --check` on `services/`
+1. **Lint (Ruff)** — `ruff check` + `ruff format --check` on `services/` and `scripts/`
 2. **Security** — [Bandit](https://bandit.readthedocs.io/) (medium+) + `pip-audit` on service deps
-3. **Unit tests** — `make test` for common, worker, and api
+3. **Unit tests** — `make test` for common, worker, api, and ingest
 4. **ES smoke** — live Elasticsearch upsert → BM25 (`make smoke`; GHA ES service)
-5. **Web** — `next lint` + production `next build`
-6. **Kubernetes validate** — `kubectl kustomize` + [kubeconform](https://github.com/yannh/kubeconform)
-7. **Docker builds** — api, worker, ingest, web (Buildx + GHA cache)
-8. **CD (main only)** — push the same images to **GHCR** as  
+5. **Web** — `next lint` + `tsc --noEmit` + production `next build`
+6. **Config validation** — every checked-in YAML/JSON parsed, plus `docker compose config`
+7. **Secret scan** — [gitleaks](https://github.com/gitleaks/gitleaks) across the full commit history
+8. **Kubernetes validate** — `kubectl kustomize` + [kubeconform](https://github.com/yannh/kubeconform)
+9. **Docker builds** — api, worker, ingest, web (Buildx + GHA cache)
+10. **CD (main only)** — push the same images to **GHCR** as  
    `ghcr.io/shubhamsinha1010/pulsesearch-cdc-rag/{api,worker,ingest,web}:latest` and `:sha-<short>`
 
+Every job runs on **every pull request**; image pushes are gated to `main`. A
+single aggregate `CI success` check fans in all jobs, so branch protection needs
+one required status instead of a list that drifts as jobs are added.
 Dependabot opens weekly PRs for Actions, pip, and npm.
 
 Local stand-in for the Python quality gates:
 
 ```bash
 pip install -r requirements-dev.txt
-make ci          # lint + bandit + test
-make lint        # ruff only
-make bandit      # security scan only
+make ci                # lint + bandit + config validation + tests
+make lint              # ruff only
+make bandit            # security scan only
+make validate-configs  # parse every YAML/JSON config
 ```
 
 ---
@@ -112,7 +118,14 @@ make bandit      # security scan only
 ## Kubernetes (app tier)
 
 Compose stays the one-command demo for MySQL / Redpanda / Debezium / Elasticsearch.  
-The **application services** (ingest, worker, api, web) also have production-shaped Deployments under `deploy/k8s/` — probes, ServiceAccount, and Ingress included.
+The **application services** (ingest, worker, api, web) also have production-shaped manifests under `deploy/k8s/`:
+
+- **Startup / liveness / readiness probes** sized to each service — a `startupProbe` absorbs the slow torch + model import so liveness can stay tight afterwards, and `api` readiness returns 503 when Elasticsearch is unreachable.
+- **Host-based Ingress** for the dashboard and API, with the long proxy timeouts the `/ws/live` WebSocket needs, plus a commented TLS / cert-manager block.
+- **`restricted` Pod Security Admission** on the namespace, backed by non-root uid 10001, dropped capabilities and `RuntimeDefault` seccomp on every pod.
+- **HPAs and PodDisruptionBudgets** for the two request-serving tiers — with `worker` left off CPU autoscaling (partition-bound) and `ingest` pinned to exactly one replica, since the SSE firehose has no consumer-group semantics.
+
+Deliberately **not** included: StatefulSets for MySQL / Kafka / Elasticsearch. Those belong to operators or managed services, not hand-rolled YAML; the `local-kind` overlay points the app pods at the Compose data plane instead.
 
 ```bash
 # Optional local path: Compose for data plane, kind for apps
@@ -218,6 +231,49 @@ Grafana ships with a provisioned **PulseSearch Pipeline** dashboard covering:
 
 Record your own numbers from this dashboard for your resume, e.g. *"sub-second median CDC-to-searchable sync latency at N events/sec on a laptop."* Because everything is measured, the claims are defensible.
 
+Two scripts turn "it feels fast / it looks right" into numbers you can quote:
+
+```bash
+make bench   # retrieval latency: BM25 vs vector vs hybrid vs RAG
+make eval    # labelled accuracy + RAG grounding probe
+```
+
+`make bench` runs a warmed-up, single-client latency benchmark and reports
+mean/p50/p95/p99 per retrieval path, the API's own `took_ms` beside client wall
+time (so transport overhead is visible), and what each strategy costs over plain
+BM25. It exits non-zero if a p95 blows past its budget, so a regression fails
+loudly instead of scrolling past. Point it elsewhere with
+`PULSESEARCH_API=http://host:port`.
+
+Worth knowing when reading the output: hybrid runs BM25 and query embedding
+concurrently, so its cost is roughly `max(BM25, embed) + kNN + fusion` rather
+than the sum of both paths.
+
+---
+
+## Runbooks
+
+Operational procedures live in [`docs/runbooks/`](docs/runbooks/), written for
+the on-call case with both Compose and Kubernetes commands:
+
+| Runbook | Covers |
+| --- | --- |
+| [Backfill & replay](docs/runbooks/backfill-and-replay.md) | Full and time-bounded replay, choosing between an offset reset and a Debezium re-snapshot, recreating the index mapping, verification and gotchas |
+| [Dead-letter queue](docs/runbooks/dead-letter-queue.md) | The DLQ envelope, why parse failures and write failures need opposite responses, inspection, redrive (and why replay is usually safer), purge |
+
+```bash
+make replay                          # rebuild the index from the log
+make replay-from TS=2026-08-30T10:00:00Z   # time-bounded replay
+make dlq-count                       # how much is in the dead-letter topic
+make dlq-peek N=50                   # read the oldest N poison messages
+```
+
+The one non-obvious thing, spelled out in the DLQ runbook: **parse** failures are
+DLQ'd *and committed*, so the DLQ copy is the last one left, whereas **write**
+exhaustion DLQs copies but deliberately leaves offsets uncommitted for
+redelivery. Redriving the second kind double-writes data the stream is already
+reprocessing.
+
 ---
 
 ## Project structure
@@ -225,8 +281,11 @@ Record your own numbers from this dashboard for your resume, e.g. *"sub-second m
 ```
 .
 ├── docker-compose.yml          # one-command local stack
-├── Makefile                    # up/down/logs/register/replay/test
+├── Makefile                    # up/down/logs/register/replay/dlq/bench/test
 ├── connectors/                 # Debezium connector config + registration
+├── deploy/k8s/                 # app-tier manifests: probes, Ingress, HPA, PDB, overlays
+├── docs/runbooks/              # backfill & replay, dead-letter queue
+├── scripts/                    # latency benchmark, accuracy eval, config validation
 ├── infra/                      # MySQL init, Prometheus, Grafana provisioning
 ├── services/
 │   ├── common/                 # shared kernel (config, models, embeddings, ES repo, metrics)
@@ -244,7 +303,11 @@ Record your own numbers from this dashboard for your resume, e.g. *"sub-second m
 make test
 ```
 
-Runs isolated unit suites per service: the shared kernel (models, embeddings, filter builder), the Debezium adapter (op handling, type coercion, versioning), and the RRF fusion logic (rank provenance, mode selection). No external services required.
+Runs isolated unit suites per service: the shared kernel (models, embeddings, filter builder), the Debezium adapter (op handling, type coercion, versioning), the RRF fusion logic (rank provenance, mode selection), and the ingest path (SSE event adapter, batch-buffer flush/retry semantics, MySQL column-width guards, source registry). No external services required.
+
+The suites are run with a `cd` per service on purpose — each service pins its own
+dependencies, and isolating them keeps a version clash in one from breaking the
+others.
 
 ---
 

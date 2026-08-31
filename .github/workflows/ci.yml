@@ -9,6 +9,11 @@ concurrency:
   group: ci-${{ github.ref }}
   cancel-in-progress: true
 
+# Least privilege by default; the only job that needs more (docker) raises it
+# for itself.
+permissions:
+  contents: read
+
 env:
   PYTHON_VERSION: "3.11"
   NODE_VERSION: "20"
@@ -30,9 +35,9 @@ jobs:
       - name: Install tooling
         run: pip install -r requirements-dev.txt
       - name: Ruff check
-        run: ruff check services
+        run: ruff check services scripts
       - name: Ruff format check
-        run: ruff format --check services
+        run: ruff format --check services scripts
 
   security-python:
     name: Security (Bandit + pip-audit)
@@ -81,6 +86,7 @@ jobs:
           pip install "./services/common"
           pip install -r services/api/requirements.txt
           pip install -r services/worker/requirements.txt
+          pip install -r services/ingest/requirements.txt
           pip install -r requirements-dev.txt
       - name: Run unit tests
         run: make test
@@ -141,11 +147,48 @@ jobs:
         run: npm ci
       - name: ESLint (next lint)
         run: npm run lint
-      - name: Typecheck + production build
+      - name: Typecheck
+        run: npm run typecheck
+      - name: Production build
         run: npm run build
         env:
           NEXT_PUBLIC_API_URL: http://localhost:8000
           NEXT_PUBLIC_WS_URL: ws://localhost:8000
+
+  validate-configs:
+    name: Validate configs (YAML/JSON + Compose)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: pip
+          cache-dependency-path: requirements-dev.txt
+      - name: Install tooling
+        run: pip install -r requirements-dev.txt
+      - name: Parse every YAML/JSON config
+        run: make validate-configs
+      - name: Validate Compose schema
+        run: docker compose config --quiet
+
+  secret-scan:
+    name: Secret scan (gitleaks)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # Full history: a secret that was committed and later removed is
+          # still leaked, so scanning only the tip would miss it.
+          fetch-depth: 0
+      - name: Install gitleaks
+        run: |
+          curl -sSL -o /tmp/gitleaks.tgz \
+            https://github.com/gitleaks/gitleaks/releases/download/v8.21.2/gitleaks_8.21.2_linux_x64.tar.gz
+          tar -xzf /tmp/gitleaks.tgz -C /tmp gitleaks
+          sudo mv /tmp/gitleaks /usr/local/bin/
+      - name: Scan commit history
+        run: gitleaks git . --no-banner --redact --verbose
 
   k8s-validate:
     name: Validate Kubernetes manifests
@@ -174,7 +217,15 @@ jobs:
   docker:
     name: Build images
     runs-on: ubuntu-latest
-    needs: [lint-python, test, smoke-es, lint-web, k8s-validate, security-python]
+    needs:
+      - lint-python
+      - test
+      - smoke-es
+      - lint-web
+      - k8s-validate
+      - security-python
+      - validate-configs
+      - secret-scan
     permissions:
       contents: read
       packages: write
@@ -230,3 +281,31 @@ jobs:
           build-args: ${{ matrix.build-args }}
           cache-from: type=gha,scope=${{ matrix.name }}
           cache-to: type=gha,mode=max,scope=${{ matrix.name }}
+
+  # Single stable status to point branch protection at, so the required-checks
+  # list does not have to be edited every time a job is added or a matrix leg
+  # changes. `always()` plus an explicit result check is required — without it
+  # this job would be skipped (and reported as success) when a dependency fails.
+  ci-success:
+    name: CI success
+    runs-on: ubuntu-latest
+    if: always()
+    needs:
+      - lint-python
+      - security-python
+      - test
+      - smoke-es
+      - lint-web
+      - validate-configs
+      - secret-scan
+      - k8s-validate
+      - docker
+    steps:
+      - name: Check job results
+        run: |
+          echo "${{ toJSON(needs) }}"
+          if echo "${{ join(needs.*.result, ' ') }}" | grep -qE 'failure|cancelled'; then
+            echo "One or more required jobs did not pass."
+            exit 1
+          fi
+          echo "All required jobs passed."

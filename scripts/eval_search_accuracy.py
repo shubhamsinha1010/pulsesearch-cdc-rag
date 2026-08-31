@@ -104,10 +104,7 @@ def _run_search_case(case: dict, sample_title: str | None) -> list[Check]:
         ok_ns = True
 
     patterns = [re.compile(p) for p in case.get("expect_any_title_regex", [])]
-    if patterns:
-        ok_regex = any(p.search(t) for t in titles for p in patterns)
-    else:
-        ok_regex = True
+    ok_regex = any(p.search(t) for t in titles for p in patterns) if patterns else True
 
     min_hits = case.get("min_hits", 0)
     ok = ok_ns and ok_regex and len(hits) >= min_hits

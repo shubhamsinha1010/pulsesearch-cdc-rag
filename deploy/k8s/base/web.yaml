@@ -7,10 +7,15 @@ metadata:
     app.kubernetes.io/name: web
     app.kubernetes.io/part-of: pulsesearch
 spec:
-  replicas: 1
+  # Managed by the HorizontalPodAutoscaler in hpa.yaml.
   selector:
     matchLabels:
       app.kubernetes.io/name: web
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxUnavailable: 0
+      maxSurge: 1
   template:
     metadata:
       labels:
@@ -18,6 +23,16 @@ spec:
         app.kubernetes.io/part-of: pulsesearch
     spec:
       serviceAccountName: pulsesearch
+      terminationGracePeriodSeconds: 30
+      # NEXT_PUBLIC_* values are inlined into the client bundle at build time,
+      # so this pod needs no config or secrets at runtime.
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 10001
+        runAsGroup: 10001
+        fsGroup: 10001
+        seccompProfile:
+          type: RuntimeDefault
       containers:
         - name: web
           image: pulsesearch-web:local
@@ -25,11 +40,23 @@ spec:
           ports:
             - name: http
               containerPort: 3000
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]
+            # Next.js writes into .next/cache at runtime.
+            readOnlyRootFilesystem: false
+          startupProbe:
+            httpGet:
+              path: /
+              port: http
+            periodSeconds: 3
+            timeoutSeconds: 3
+            failureThreshold: 20
           livenessProbe:
             httpGet:
               path: /
               port: http
-            initialDelaySeconds: 15
             periodSeconds: 20
             timeoutSeconds: 3
             failureThreshold: 3
@@ -37,7 +64,6 @@ spec:
             httpGet:
               path: /
               port: http
-            initialDelaySeconds: 5
             periodSeconds: 10
             timeoutSeconds: 3
             failureThreshold: 3

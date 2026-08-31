@@ -7,10 +7,16 @@ metadata:
     app.kubernetes.io/name: api
     app.kubernetes.io/part-of: pulsesearch
 spec:
-  replicas: 1
+  # replicas is intentionally unset: the HorizontalPodAutoscaler in hpa.yaml
+  # owns it, and re-applying a hardcoded value would fight the autoscaler.
   selector:
     matchLabels:
       app.kubernetes.io/name: api
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxUnavailable: 0
+      maxSurge: 1
   template:
     metadata:
       labels:
@@ -22,6 +28,15 @@ spec:
         prometheus.io/path: /metrics
     spec:
       serviceAccountName: pulsesearch
+      # Uvicorn finishes in-flight requests; WebSocket clients get time to drain.
+      terminationGracePeriodSeconds: 30
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 10001
+        runAsGroup: 10001
+        fsGroup: 10001
+        seccompProfile:
+          type: RuntimeDefault
       containers:
         - name: api
           image: pulsesearch-api:local
@@ -34,19 +49,36 @@ spec:
                 name: pulsesearch-config
             - secretRef:
                 name: pulsesearch-secrets
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]
+            # Not read-only: sentence-transformers writes lock files into the
+            # baked HF cache (HF_HOME=/opt/hf) on first model load.
+            readOnlyRootFilesystem: false
+          # Importing torch + sentence-transformers takes tens of seconds. The
+          # startupProbe absorbs that, so liveness/readiness can stay tight
+          # without a long initialDelaySeconds masking real hangs later.
+          startupProbe:
+            httpGet:
+              path: /health
+              port: http
+            periodSeconds: 5
+            timeoutSeconds: 3
+            failureThreshold: 36
           livenessProbe:
             httpGet:
               path: /health
               port: http
-            initialDelaySeconds: 20
             periodSeconds: 20
             timeoutSeconds: 3
             failureThreshold: 3
+          # /health/ready returns 503 when Elasticsearch is unreachable, so a
+          # pod that cannot serve search is pulled from the Service.
           readinessProbe:
             httpGet:
               path: /health/ready
               port: http
-            initialDelaySeconds: 10
             periodSeconds: 10
             timeoutSeconds: 5
             failureThreshold: 3

@@ -7,10 +7,19 @@ metadata:
     app.kubernetes.io/name: worker
     app.kubernetes.io/part-of: pulsesearch
 spec:
+  # Useful parallelism is capped by the partition count of the CDC topic:
+  # extra replicas beyond that sit idle in the consumer group.
   replicas: 1
   selector:
     matchLabels:
       app.kubernetes.io/name: worker
+  strategy:
+    # Surge 0 so the outgoing pod leaves the consumer group before the new one
+    # joins, which avoids a second rebalance mid-rollout.
+    type: RollingUpdate
+    rollingUpdate:
+      maxUnavailable: 1
+      maxSurge: 0
   template:
     metadata:
       labels:
@@ -22,6 +31,16 @@ spec:
         prometheus.io/path: /metrics
     spec:
       serviceAccountName: pulsesearch
+      # SIGTERM stops the poll loop, then the DLQ producer is flushed; give
+      # that shutdown path room to finish before SIGKILL.
+      terminationGracePeriodSeconds: 60
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 10001
+        runAsGroup: 10001
+        fsGroup: 10001
+        seccompProfile:
+          type: RuntimeDefault
       containers:
         - name: worker
           image: pulsesearch-worker:local
@@ -34,21 +53,32 @@ spec:
                 name: pulsesearch-config
             - secretRef:
                 name: pulsesearch-secrets
-          # Metrics HTTP server is started after process boot; use it as a probe.
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]
+            # See api.yaml: the baked HF cache needs a writable path.
+            readOnlyRootFilesystem: false
+          # The worker has no Service traffic, so there is no readinessProbe:
+          # readiness would only remove the metrics endpoint from scraping
+          # exactly when a struggling worker is most worth observing.
+          #
+          # Caveat: the metrics server starts before the model load and the
+          # index wait, so these probes prove liveness of the process, not that
+          # the consumer is caught up. Use pulse_sync_latency_seconds and
+          # consumer lag for that (see docs/runbooks/backfill-and-replay.md).
+          startupProbe:
+            httpGet:
+              path: /metrics
+              port: metrics
+            periodSeconds: 5
+            timeoutSeconds: 5
+            failureThreshold: 60
           livenessProbe:
             httpGet:
               path: /metrics
               port: metrics
-            initialDelaySeconds: 60
             periodSeconds: 30
-            timeoutSeconds: 5
-            failureThreshold: 3
-          readinessProbe:
-            httpGet:
-              path: /metrics
-              port: metrics
-            initialDelaySeconds: 30
-            periodSeconds: 15
             timeoutSeconds: 5
             failureThreshold: 3
           resources:
@@ -58,3 +88,21 @@ spec:
             limits:
               cpu: "1"
               memory: 2Gi
+---
+# Headless-friendly ClusterIP purely so a ServiceMonitor can target the worker
+# (see deploy/k8s/optional/servicemonitor.yaml). No client traffic uses it.
+apiVersion: v1
+kind: Service
+metadata:
+  name: worker
+  namespace: pulsesearch
+  labels:
+    app.kubernetes.io/name: worker
+    app.kubernetes.io/part-of: pulsesearch
+spec:
+  selector:
+    app.kubernetes.io/name: worker
+  ports:
+    - name: metrics
+      port: 9100
+      targetPort: metrics

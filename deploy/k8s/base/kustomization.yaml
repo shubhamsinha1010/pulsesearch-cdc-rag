@@ -1,6 +1,9 @@
 apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization
 namespace: pulsesearch
+# secret.example.yaml is intentionally excluded: overlays supply the real
+# Secret. Applying base/ alone leaves the envFrom secretRef unresolved and the
+# pods will stay in CreateContainerConfigError until one exists.
 resources:
   - namespace.yaml
   - serviceaccount.yaml
@@ -9,4 +12,6 @@ resources:
   - worker.yaml
   - ingest.yaml
   - web.yaml
+  - hpa.yaml
+  - pdb.yaml
   - ingress.yaml

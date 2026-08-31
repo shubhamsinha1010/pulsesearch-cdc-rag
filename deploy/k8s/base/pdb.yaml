@@ -1,0 +1,37 @@
+# Voluntary-disruption budgets for the request-serving tiers.
+#
+# maxUnavailable (not minAvailable) is deliberate: these Deployments can sit at
+# a single replica, and `minAvailable: 1` would then block node drains and
+# cluster upgrades indefinitely. maxUnavailable: 1 still serialises evictions
+# once the HPA has scaled out.
+#
+# worker and ingest get no PDB: both are single-replica background consumers,
+# and CDC is designed to tolerate them restarting (offsets are committed only
+# after a durable Elasticsearch write).
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: api
+  namespace: pulsesearch
+  labels:
+    app.kubernetes.io/name: api
+    app.kubernetes.io/part-of: pulsesearch
+spec:
+  maxUnavailable: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: api
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: web
+  namespace: pulsesearch
+  labels:
+    app.kubernetes.io/name: web
+    app.kubernetes.io/part-of: pulsesearch
+spec:
+  maxUnavailable: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: web

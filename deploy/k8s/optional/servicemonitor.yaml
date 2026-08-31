@@ -1,0 +1,62 @@
+# Prometheus Operator scrape configuration.
+#
+# Not part of base/ on purpose: ServiceMonitor is a CRD, so applying it without
+# the Prometheus Operator installed fails. The Deployments also carry
+# prometheus.io/* annotations, which is all an annotation-scraping Prometheus
+# (like the Compose one in infra/prometheus) needs.
+#
+# Apply only if you run kube-prometheus-stack:
+#   kubectl apply -f deploy/k8s/optional/servicemonitor.yaml
+#
+# The `release` label must match your Prometheus Operator's serviceMonitorSelector
+# (kube-prometheus-stack defaults to the Helm release name).
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: pulsesearch-api
+  namespace: pulsesearch
+  labels:
+    app.kubernetes.io/part-of: pulsesearch
+    release: kube-prometheus-stack
+spec:
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: api
+  endpoints:
+    - port: http
+      path: /metrics
+      interval: 15s
+---
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: pulsesearch-worker
+  namespace: pulsesearch
+  labels:
+    app.kubernetes.io/part-of: pulsesearch
+    release: kube-prometheus-stack
+spec:
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: worker
+  endpoints:
+    - port: metrics
+      path: /metrics
+      interval: 15s
+---
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: pulsesearch-ingest
+  namespace: pulsesearch
+  labels:
+    app.kubernetes.io/part-of: pulsesearch
+    release: kube-prometheus-stack
+spec:
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: ingest
+  endpoints:
+    - port: metrics
+      path: /metrics
+      interval: 15s

@@ -1,0 +1,64 @@
+# Autoscaling for the two stateless, request-serving tiers only.
+#
+# Requires metrics-server in the cluster (kind: `kubectl apply -f
+# https://github.com/kubernetes-sigs/metrics-server/releases/latest/download/
+# components.yaml` with --kubelet-insecure-tls). Without it the HPAs report
+# <unknown> targets and simply do not scale — harmless.
+#
+# Deliberately absent:
+#   worker  useful parallelism is bounded by the CDC topic's partition count,
+#           and CPU is a poor proxy for consumer lag. Scale it by hand or with
+#           a lag-based autoscaler (KEDA).
+#   ingest  must stay at exactly 1 replica; see ingest.yaml.
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: api
+  namespace: pulsesearch
+  labels:
+    app.kubernetes.io/name: api
+    app.kubernetes.io/part-of: pulsesearch
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: api
+  minReplicas: 1
+  maxReplicas: 4
+  metrics:
+    - type: Resource
+      resource:
+        name: cpu
+        target:
+          type: Utilization
+          averageUtilization: 70
+  behavior:
+    scaleDown:
+      # Query embedding is CPU-bursty; a long window stops replica flapping.
+      stabilizationWindowSeconds: 300
+---
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: web
+  namespace: pulsesearch
+  labels:
+    app.kubernetes.io/name: web
+    app.kubernetes.io/part-of: pulsesearch
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: web
+  minReplicas: 1
+  maxReplicas: 3
+  metrics:
+    - type: Resource
+      resource:
+        name: cpu
+        target:
+          type: Utilization
+          averageUtilization: 80
+  behavior:
+    scaleDown:
+      stabilizationWindowSeconds: 300

@@ -8,10 +8,20 @@ metadata:
   labels:
     app.kubernetes.io/part-of: pulsesearch
   annotations:
+    # The dashboard holds a long-lived WebSocket on /ws/live; the default
+    # 60s proxy timeouts would sever it every minute.
     nginx.ingress.kubernetes.io/proxy-read-timeout: "3600"
     nginx.ingress.kubernetes.io/proxy-send-timeout: "3600"
+    # TLS: with cert-manager installed, uncomment the issuer annotation and the
+    # spec.tls block below, then point DNS at the controller's external IP.
+    # cert-manager.io/cluster-issuer: letsencrypt-prod
 spec:
   ingressClassName: nginx
+  # tls:
+  #   - hosts:
+  #       - pulsesearch.example.com
+  #       - api.pulsesearch.example.com
+  #     secretName: pulsesearch-tls
   rules:
     - host: pulsesearch.local
       http:

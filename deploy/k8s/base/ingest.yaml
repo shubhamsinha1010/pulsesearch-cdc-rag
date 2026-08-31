@@ -7,10 +7,17 @@ metadata:
     app.kubernetes.io/name: ingest
     app.kubernetes.io/part-of: pulsesearch
 spec:
+  # Must stay at 1. The Wikimedia SSE firehose has no consumer-group semantics,
+  # so a second replica would duplicate every event into MySQL and double the
+  # CDC volume. Deliberately not autoscaled.
   replicas: 1
   selector:
     matchLabels:
       app.kubernetes.io/name: ingest
+  strategy:
+    # Recreate for the same reason: a rolling update would briefly run two
+    # firehose readers.
+    type: Recreate
   template:
     metadata:
       labels:
@@ -22,6 +29,19 @@ spec:
         prometheus.io/path: /metrics
     spec:
       serviceAccountName: pulsesearch
+      # SIGTERM breaks the stream loop and flushes the pending batch to MySQL.
+      terminationGracePeriodSeconds: 30
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 10001
+        runAsGroup: 10001
+        fsGroup: 10001
+        seccompProfile:
+          type: RuntimeDefault
+      volumes:
+        # Only writable path needed once the root filesystem is read-only.
+        - name: tmp
+          emptyDir: {}
       containers:
         - name: ingest
           image: pulsesearch-ingest:local
@@ -34,20 +54,31 @@ spec:
                 name: pulsesearch-config
             - secretRef:
                 name: pulsesearch-secrets
+          env:
+            - name: TMPDIR
+              value: /tmp
+          volumeMounts:
+            - name: tmp
+              mountPath: /tmp
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]
+            # No ML libraries here, so the stricter setting is safe.
+            readOnlyRootFilesystem: true
+          # No readinessProbe: nothing routes traffic to ingest (see worker.yaml).
+          startupProbe:
+            httpGet:
+              path: /metrics
+              port: metrics
+            periodSeconds: 5
+            timeoutSeconds: 5
+            failureThreshold: 24
           livenessProbe:
             httpGet:
               path: /metrics
               port: metrics
-            initialDelaySeconds: 30
             periodSeconds: 30
-            timeoutSeconds: 5
-            failureThreshold: 3
-          readinessProbe:
-            httpGet:
-              path: /metrics
-              port: metrics
-            initialDelaySeconds: 15
-            periodSeconds: 15
             timeoutSeconds: 5
             failureThreshold: 3
           resources:
@@ -57,3 +88,20 @@ spec:
             limits:
               cpu: 500m
               memory: 512Mi
+---
+# ClusterIP for metrics scraping only (see deploy/k8s/optional/servicemonitor.yaml).
+apiVersion: v1
+kind: Service
+metadata:
+  name: ingest
+  namespace: pulsesearch
+  labels:
+    app.kubernetes.io/name: ingest
+    app.kubernetes.io/part-of: pulsesearch
+spec:
+  selector:
+    app.kubernetes.io/name: ingest
+  ports:
+    - name: metrics
+      port: 9100
+      targetPort: metrics

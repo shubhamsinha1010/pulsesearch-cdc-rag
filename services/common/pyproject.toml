@@ -10,7 +10,7 @@ requires-python = ">=3.11"
 dependencies = [
     "pydantic>=2.6",
     "pydantic-settings>=2.2",
-    "elasticsearch>=8.13,<9",
+    "elasticsearch>=8.13,<10",
     "prometheus-client>=0.20",
 ]
 
